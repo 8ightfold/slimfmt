@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Highlight files with internal conventions
+*.h     linguist-language=cpp
+*.mac   linguist-language=cpp
+*.impl  linguist-language=cpp
