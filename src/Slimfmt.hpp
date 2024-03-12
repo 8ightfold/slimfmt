@@ -971,6 +971,58 @@ using SmallBufEstimateType =
   SmallBuf<(N > 64) ? 256 : 64>;
 #endif
 
+template <std::size_t N, typename...TT>
+std::string format(const char(&Str)[N], TT&&...Args) {
+  SmallBufEstimateType<N, TT...> Buf;
+  Formatter Fmt {Buf, {Str, N}};
+  Fmt.parseWith({FmtValue{Args}...});
+  return std::string(Buf.begin(), Buf.end());
+}
+
+template <std::size_t N, typename...TT>
+void print(std::FILE* File, const char(&Str)[N], TT&&...Args) {
+  SmallBufEstimateType<N, TT...> Buf;
+  Formatter Fmt {Buf, {Str, N}};
+  Fmt.parseWith({FmtValue{Args}...});
+  Buf.writeTo(File);
+}
+
+template <std::size_t N, typename...TT>
+void print(std::ostream& Stream, const char(&Str)[N], TT&&...Args) {
+  SmallBufEstimateType<N, TT...> Buf;
+  Formatter Fmt {Buf, {Str, N}};
+  Fmt.parseWith({FmtValue{Args}...});
+  Buf.writeTo(Stream);
+}
+
+template <std::size_t N, typename...TT>
+void print(const char(&Str)[N], TT&&...Args) {
+  print(stdout, Str, std::forward<TT>(Args)...);
+}
+
+template <std::size_t N, typename...TT>
+void println(std::FILE* File, const char(&Str)[N], TT&&...Args) {
+  SmallBufEstimateType<N + 1, TT...> Buf;
+  Formatter Fmt {Buf, {Str, N}};
+  Fmt.parseWith({FmtValue{Args}...});
+  Buf.pushBack('\n');
+  Buf.writeTo(File);
+}
+
+template <std::size_t N, typename...TT>
+void println(std::ostream& Stream, const char(&Str)[N], TT&&...Args) {
+  SmallBufEstimateType<N + 1, TT...> Buf;
+  Formatter Fmt {Buf, {Str, N}};
+  Fmt.parseWith({FmtValue{Args}...});
+  Buf.pushBack('\n');
+  Buf.writeTo(Stream);
+}
+
+template <std::size_t N, typename...TT>
+void println(const char(&Str)[N], TT&&...Args) {
+  println(stdout, Str, std::forward<TT>(Args)...);
+}
+
 } // namespace sfmt
 
 #endif // SLIMFMT_HSLIMFMT_HPP
