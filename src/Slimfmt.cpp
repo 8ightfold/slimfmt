@@ -723,7 +723,7 @@ static bool formatCustomBridgeN(
   if (Base == IRad.Radix) {
     (void) IntFormat<Base>::Write(Buf, IRad.Val);
     const int Count = IntFormat<Base>::Count(IRad.Val);
-    if constexpr (HH::isPow2<Base>) {
+    if constexpr (false && HH::isPow2<Base>) {
       Buf.appendStr(", Count: ");
       IntFormat<10>::Write(Buf, std::uint64_t(Count));
       Buf.appendStr("; shiftCount: ");
@@ -762,42 +762,80 @@ void testRadixA(std::uint64_t Val, std::size_t Radix) {
 
 void testRadix(std::uint64_t Val, std::size_t Radix) {
   testRadixA(Val, Radix);
-  if (!(Radix & (Radix - 1))) {
-    sfmt::print("  ");
-    testRadixA(Val, 2);
-  }
+  // if (!(Radix & (Radix - 1))) {
+  //   sfmt::print("  ");
+  //   testRadixA(Val, 2);
+  // }
   std::fflush(stdout);
 }
 
 //===============================================================//
 
-template <typename T>
-static inline int countDigitsDispatch(T Value, BaseType Base) {
-  static_assert(std::is_integral_v<T>, "Invalid value type!");
-  const auto Norm = static_cast<std::uint64_t>(Value);
+template <typename F>
+static inline auto baseDispatch(
+ std::uint64_t Value, RawBaseType Base, F&& Func) {
+#define DISPATCH_BASE(N) case N: \
+ return Func(IntFormat<N>{}, Value);
   switch (Base) {
-   case BaseType::Bin:
-    return IntFormat<2>::Count(Value);
-   case BaseType::Oct:
-    return IntFormat<8>::Count(Value);
-   case BaseType::Dec:
-    return IntFormat<10>::Count(Value);
-   case BaseType::Hex:
-    return IntFormat<16>::Count(Value);
+   DISPATCH_BASE(1);
+   DISPATCH_BASE(2);
+   DISPATCH_BASE(3);
+   DISPATCH_BASE(4);
+   DISPATCH_BASE(5);
+   DISPATCH_BASE(6);
+   DISPATCH_BASE(7);
+   DISPATCH_BASE(8);
+   DISPATCH_BASE(9);
+   DISPATCH_BASE(10);
+   DISPATCH_BASE(11);
+   DISPATCH_BASE(12);
+   DISPATCH_BASE(13);
+   DISPATCH_BASE(14);
+   DISPATCH_BASE(15);
+   DISPATCH_BASE(16);
+   DISPATCH_BASE(17);
+   DISPATCH_BASE(18);
+   DISPATCH_BASE(19);
+   DISPATCH_BASE(20);
+   DISPATCH_BASE(21);
+   DISPATCH_BASE(22);
+   DISPATCH_BASE(23);
+   DISPATCH_BASE(24);
+   DISPATCH_BASE(25);
+   DISPATCH_BASE(26);
+   DISPATCH_BASE(27);
+   DISPATCH_BASE(28);
+   DISPATCH_BASE(29);
+   DISPATCH_BASE(30);
+   DISPATCH_BASE(31);
+   DISPATCH_BASE(32);
    default: {
     dbgassert(false && "Invalid base!");
-    return 0;
+    return decltype(Func(IntFormat<1>{}, Value)) {};
    }
   }
+#undef DISPATCH_BASE
 }
 
-int Formatter::CountDigits(long long Value, BaseType Base) {
+template <typename T>
+static inline int countDigitsDispatch(T Value, RawBaseType Base) {
+  static_assert(std::is_integral_v<T>, "Invalid value type!");
+  const auto Norm = static_cast<std::uint64_t>(Value);
+  // TODO: Change this, too lazy rn
+  return baseDispatch(Value, Base,
+  [] <std::size_t BaseV> 
+   (IntFormat<BaseV> Fmt, std::uint64_t Value) {
+    return Fmt.Count(Value);
+  });
+}
+
+int Formatter::CountDigits(long long Value, BaseSink Base) {
   const int Sign = (Value < 0LL);
   const auto Norm = std::uint64_t(std::llabs(Value));
   return countDigitsDispatch(Norm, Base) + Sign;
 }
 
-int Formatter::CountDigits(unsigned long long Value, BaseType Base) {
+int Formatter::CountDigits(unsigned long long Value, BaseSink Base) {
   return countDigitsDispatch(std::uint64_t(Value), Base);
 }
 
@@ -911,14 +949,20 @@ bool Formatter::write(unsigned long long Value) const {
   const bool UseUpper = 
     (Spec.Extra == ExtraType::Uppercase) ||
     (Spec.Extra == ExtraType::Ptr);
+  return baseDispatch(Value, Spec.Base, 
+  [this, UseUpper] <std::size_t BaseV> 
+   (IntFormat<BaseV> Fmt, std::uint64_t Value) {
+    return Fmt.Write(this->Buf, Value, UseUpper);
+  });
+
   switch (Spec.Base) {
-   case BaseType::Bin:
+   case 2:
     return IntFormat<2>::Write(Buf, Value);
-   case BaseType::Oct:
+   case 8:
     return IntFormat<8>::Write(Buf, Value);
-   case BaseType::Dec:
+   case 10:
     return IntFormat<10>::Write(Buf, Value);
-   case BaseType::Hex:
+   case 16:
     return IntFormat<16>::Write(Buf, Value, UseUpper);
    default: {
     dbgassert(false && "Invalid base.");

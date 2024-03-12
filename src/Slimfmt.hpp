@@ -782,7 +782,8 @@ private:
 
 //=== Format Specific ===//
 
-enum class BaseType : std::int64_t {
+using RawBaseType = std::int64_t;
+enum class BaseType : RawBaseType {
   Bin = 2, 
   Oct = 8, 
   Dec = 10,
@@ -799,6 +800,36 @@ enum class ExtraType {
 enum class AlignType {
   Left, Right, Center,
   Default = Left
+};
+
+struct BaseSink {
+  constexpr BaseSink() = default;
+  constexpr BaseSink(std::int64_t Base) : RawValue(Base) {}
+  constexpr BaseSink(BaseType Base) : BaseSink(RawBaseType(Base)) {}
+  
+  BaseSink& operator=(RawBaseType Base) {
+    this->RawValue = Base;
+    return *this;
+  }
+  BaseSink& operator=(BaseType Base) {
+    this->RawValue = RawBaseType(Base);
+    return *this;
+  }
+
+  constexpr operator RawBaseType() const {
+    return this->RawValue;
+  }
+  explicit constexpr operator BaseType() const {
+    return BaseType(this->RawValue);
+  }
+
+  constexpr friend bool operator==(
+   const BaseSink& Lhs, const BaseSink& Rhs) {
+    return Lhs.RawValue == Rhs.RawValue;
+  }
+
+public:
+  RawBaseType RawValue = 10;
 };
 
 struct FmtReplacement {
@@ -824,7 +855,7 @@ public:
 public:
   RType Type = RType::Empty;
   StrView Data;
-  BaseType Base = BaseType::Default;
+  BaseSink Base = BaseType::Default;
   ExtraType Extra = ExtraType::Default;
   std::size_t Align = 0;
   AlignType Side = AlignType::Default;
@@ -847,8 +878,8 @@ public:
   void parseWith(FmtValue::List Values);
 
 public:
-  static int CountDigits(long long Value, BaseType Base);
-  static int CountDigits(unsigned long long Value, BaseType Base);
+  static int CountDigits(long long Value, BaseSink Base);
+  static int CountDigits(unsigned long long Value, BaseSink Base);
   std::size_t getValueSize(FmtValue Value) const;
 
   /// Formats an abstract value with the current parse state.
