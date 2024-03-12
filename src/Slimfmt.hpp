@@ -191,7 +191,7 @@ struct DynBuf {
   using difference_type = std::ptrdiff_t;
 
 public:
-  constexpr DynBuf(char* Ptr, size_type Capacity) : 
+  DynBuf(char* Ptr, size_type Capacity) : 
    Data(Ptr), Capacity(Capacity) {
     // Always have some capacity.
     this->tweakBuffer();
