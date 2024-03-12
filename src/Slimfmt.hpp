@@ -31,8 +31,12 @@
 #include <type_traits>
 #include <utility>
 
-#ifndef SLIMFMT_CXPR_CHECKS
-# define SLIMFMT_CXPR_CHECKS 0
+#ifndef SLIMFMT_FORCE_ASSERT
+# define SLIMFMT_FORCE_ASSERT 0
+#endif
+
+#ifndef SLIMFMT_STDERR_ASSERT
+# define SLIMFMT_STDERR_ASSERT 0
 #endif
 
 #ifdef __has_cpp_attribute
@@ -76,16 +80,8 @@
 # define SLIMFMT_UNLIKELY(ex) (bool(ex))
 #endif
 
-#ifdef NDEBUG
-# define SLIMFMT_ASSERT(ex, msg) ::sfmt::H::assume(ex)
-#else
-# define SLIMFMT_ASSERT(ex, msg) assert((ex) && msg)
-#endif
-
-#define SLIMFMT_ENABLE_IF(...) \
- std::enable_if_t<(__VA_ARGS__), bool> = true
-
 #define SLIMFMT_ASSUME(...) ::sfmt::H::assume(bool(__VA_ARGS__))
+
 #ifdef NDEBUG
 # define SLIMFMT_UNREACHABLE ::sfmt::H::unreachable()
 #else
@@ -342,6 +338,13 @@ public:
     this->Size += Total;
   }
 
+  template <typename It>
+  void append(const It* Begin, std::size_t Len) {
+    if SLIMFMT_UNLIKELY(!Begin || Len == 0)
+      return;
+    this->append(Begin, Begin + Len);
+  }
+
   void appendStr(StrView Str) {
     this->append(Str.begin(), Str.end());
   }
@@ -465,7 +468,7 @@ struct SmallBuf : public H::SmallBufImpl, H::SmallBufStorage<InlinedSize> {
 public:
   explicit constexpr SmallBuf() :
    H::SmallBufImpl(InlinedSize) {
-    SLIMFMT_ASSERT(this->data(), "Buffer cannot be null!");
+    assert(this->data() && "Buffer cannot be null!");
     if SLIMFMT_UNLIKELY(H::is_consteval())
       std::fill_n(this->begin(), this->capacity(), '\0');
   }
@@ -779,11 +782,11 @@ private:
 
 //=== Format Specific ===//
 
-enum class BaseType {
-  Bin = 0, 
-  Oct = 1, 
-  Dec = 2,
-  Hex = 3,
+enum class BaseType : std::int64_t {
+  Bin = 2, 
+  Oct = 8, 
+  Dec = 10,
+  Hex = 16,
   Default = Dec,
   Invalid = -1
 };
@@ -858,6 +861,7 @@ public:
   bool write(char C) const;
   bool write(FmtValue::StrAndLen FatStr) const;
   bool write(const AnyFmt& Generic) const;
+  bool write(const SmallBufBase& InBuf) const;
 
 protected:
   void setReplacementSubstr(std::size_t Len = StrView::npos);
@@ -869,22 +873,6 @@ private:
   FmtReplacement ParsedReplacement;
   SmallBufBase& Buf;
   const bool IsPermissive;
-};
-
-//=== Format Checking ===//
-
-#if SLIMFMT_CXPR_CHECKS
-# error Compile time checking is currently unsupported!
-#endif // SLIMFMT_CXPR_CHECKS
-
-template <std::size_t N, typename...TT>
-struct FmtString : public std::string_view {
-  SLIMFMT_CONSTEVAL FmtString(const char(&Str)[N]) :
-   std::string_view(Str, N) {
- #if SLIMFMT_CXPR_CHECKS
-    // TODO...
- #endif // SLIMFMT_CXPR_CHECKS
-  }
 };
 
 } // namespace sfmt
@@ -958,6 +946,12 @@ void println(const char(&Str)[N], TT&&...Args) {
   println(stdout, Str, std::forward<TT>(Args)...);
 }
 
+/// @brief Enables or disables colored output.
+/// @return The old color mode value.
+bool setColorMode(bool Value);
+
 } // namespace sfmt
+
+void testRadix(std::uint64_t Val, std::size_t Radix);
 
 #endif // SLIMFMT_HSLIMFMT_HPP

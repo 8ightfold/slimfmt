@@ -1,5 +1,6 @@
 #define SLIMFMT_CXPR_CHECKS 0
 #include <Slimfmt.hpp>
+#include <cmath>
 #include <chrono>
 #include <iostream>
 
@@ -37,35 +38,63 @@ void testBuf() {
   OtherBuf.writeTo(stdout);
 }
 
+static inline void runOneTest(std::string& Str, CustomType& Any) {
+  // sfmt::println("Testing, testing, {}!",      "123");
+  // sfmt::println("Testing, testing, {: +10}!", 123);
+  // sfmt::println("Testing, testing, {: =*%D}!", 10, "123");
+  // sfmt::println("Testing, testing, {: -10}!", 123);
+  // sfmt::println("Testing, testing, {%c}!", "ABC");
+  // sfmt::println("{%b}, {}, {} {}!!", 42, "it's great", Any, Str);
+  // sfmt::println("{}, {%o}, {} {}!!", "it's great", 42, Str, Any);
+  // sfmt::println("{}, {}, {%d} {}!!", Any, "it's great", 42, Str);
+  // sfmt::println("{}, {}, {} {%X}!!", Str, Any, "it's great", 42);
+  // sfmt::println("\n\n");
+  // sfmt::println("Testing, testing, {}!!",      "123");
+  sfmt::println("Testing, testing, {: +10%x}!!", -123);
+  sfmt::println("Testing, testing, {: =*}!!", 10, "-7b");
+  sfmt::println("Testing, testing, {: -10%x}!!", -123);
+  sfmt::println("Testing, testing, {%c}!!", "ABC");
+  sfmt::println("{%b}, {}, {} {}!", 42, "it's great", Any, Str);
+  sfmt::println("{}, {%o}, {} {}!", "it's great", 42, Str, Any);
+  sfmt::println("{}, {}, {%d} {}!", Any, "it's great", 42, Str);
+  sfmt::println("{}, {}, {} {%X}!", Str, Any, "it's great", 42);
+}
+
 int main() {
   namespace chrono = std::chrono;
   using TimerType = chrono::high_resolution_clock;
+  sfmt::setColorMode(true);
 
   std::string Str = "yeah!!";
   CustomType  Any = {"sooo"};
 
-  const std::int64_t Iters = 100000;
+  sfmt::nulls("static constexpr std::uint64_t baseLog2LUT[] {{\n  ");
+  sfmt::nulls("0, ");
+  for (int I = 1; I <= 32; ++I) {
+    const auto Log = std::log2(double(I));
+    sfmt::nulls("{}, ", std::uint64_t(Log));
+    if ((I % 8) == 0)
+      sfmt::nulls("\n  ");
+  }
+  sfmt::nulls("};\n");
+
+  testRadix(789942, 32);  // o3dm
+  testRadix(59922,  25);  // 3klm
+  testRadix(1188,   19);  // 35a
+  testRadix(57575,  16);  // e0e7
+  testRadix(123,    16);  // 7b
+  testRadix(842,    10);  // 842
+  testRadix(98311,  8);   // 300007
+  testRadix(588585, 5);   // 122313320
+  testRadix(144,    2);   // 10010000
+  testRadix(7,      1);   // 1111111
+  sfmt::println("\n\n");
+
+  // constexpr std::int64_t Iters = 100000;
+  constexpr std::int64_t Iters = 1;
   auto Start = TimerType::now();
   for (std::int64_t I = 0; I < Iters; ++I) {
-    sfmt::nulls("Testing, testing, {}!",      "123");
-    sfmt::nulls("Testing, testing, {: +10}!", 123);
-    sfmt::nulls("Testing, testing, {: =*%D}!", 10, "123");
-    sfmt::nulls("Testing, testing, {: -10}!", 123);
-    sfmt::nulls("Testing, testing, {%c}!", "ABC");
-    sfmt::nulls("{%b}, {}, {} {}!!", 42, "it's great", Any, Str);
-    sfmt::nulls("{}, {%o}, {} {}!!", "it's great", 42, Str, Any);
-    sfmt::nulls("{}, {}, {%d} {}!!", Any, "it's great", 42, Str);
-    sfmt::nulls("{}, {}, {} {%X}!!", Str, Any, "it's great", 42);
-    sfmt::nulls("\n\n");
-    sfmt::nulls("Testing, testing, {}!!",      "123");
-    sfmt::nulls("Testing, testing, {: +10}!!", 123);
-    sfmt::nulls("Testing, testing, {: =*%D}!!", 10, "123");
-    sfmt::nulls("Testing, testing, {: -10}!!", 123);
-    sfmt::nulls("Testing, testing, {%c}!!", "ABC");
-    sfmt::nulls("{%b}, {}, {} {}!", 42, "it's great", Any, Str);
-    sfmt::nulls("{}, {%o}, {} {}!", "it's great", 42, Str, Any);
-    sfmt::nulls("{}, {}, {%d} {}!", Any, "it's great", 42, Str);
-    sfmt::nulls("{}, {}, {} {%X}!", Str, Any, "it's great", 42);
+    runOneTest(Str, Any);
   }
   auto End = TimerType::now();
   const chrono::duration<double> Secs = End - Start;

@@ -17,11 +17,26 @@
 //===----------------------------------------------------------------===//
 
 #include "Slimfmt.hpp"
-#include <cassert>
+#include <atomic>
 #include <cmath>
 #include <charconv>
 #include <ostream>
 #include <tuple>
+
+#if defined(NDEBUG) && SLIMFMT_FORCE_ASSERT
+# undef NDEBUG
+# include <cassert>
+# define NDEBUG 1
+#endif
+
+#undef dbgassert
+#if SLIMFMT_STDERR_ASSERT
+# define dbgassert(...) (void) \
+  (SLIMFMT_LIKELY(bool(__VA_ARGS__)) \
+    ? (void(0)) : ::sfmt::dbgprintf(__func__, __LINE__, #__VA_ARGS__))
+#else
+# define dbgassert(...) assert(__VA_ARGS__)
+#endif
 
 #ifdef _MSC_VER
 # include <intrin.h>
@@ -30,6 +45,7 @@
 #ifndef _MSC_VER
 # if SLIMFMT_HAS_BUILTIN(__builtin_clzll)
 #  define SLIMFMT_CLZLL(x) __builtin_clzll(x)
+#  define CLZLL_CXPR constexpr
 # endif
 #else // _MSC_VER
 
@@ -56,11 +72,50 @@ static inline int msc_clzll(std::uint64_t V) {
 }
 
 # define SLIMFMT_CLZLL(x) ::msc_clzll(x)
+# define CLZLL_CXPR
 
 #endif // _MSC_VER
 
 using namespace sfmt;
 using namespace sfmt::H;
+
+//======================================================================//
+// Utilities
+//======================================================================//
+
+namespace sfmt {
+  static std::atomic<bool> usesColor {false};
+  static bool getColorMode() {
+    return usesColor.load();
+  }
+  bool setColorMode(bool Value) {
+    return usesColor.exchange(Value);
+  }
+
+  static void dbgprintf(const char* Function, unsigned Line, const char* Str) {
+    const bool UseColors = sfmt::getColorMode();
+    const char* Red   = UseColors ? "\e[0;31m" : "";
+    const char* BRed  = UseColors ? "\e[0;91m" : "";
+    const char* Reset = UseColors ? "\e[0m" : "";
+    (void) std::fprintf(stderr, 
+      "%sIn %s:%u:\n%s  %s\n%s",
+        Red, Function, Line, 
+        BRed, Str,
+        Reset);
+  }
+
+#ifdef SLIMFMT_CLZLL
+  static inline CLZLL_CXPR int clzll(std::uint64_t V) {
+    using ULLType = unsigned long long;
+    constexpr int Sub = (sizeof(ULLType) * 8) - 64;
+    return SLIMFMT_CLZLL(V) - Sub;
+  }
+
+  static inline CLZLL_CXPR int intLog2(std::uint64_t V) {
+    return 63 - clzll(V | 1);
+  }
+#endif // SLIMFMT_CLZLL
+} // namespace sfmt
 
 namespace {
   template <typename T>
@@ -172,7 +227,8 @@ void SmallBufImpl::tryReserve(size_type Cap) {
   const size_type OldCapacity = this->Capacity;
   if SLIMFMT_LIKELY(Cap <= OldCapacity)
     return;
-  size_type NewCapacity = OldCapacity + (OldCapacity / 2);
+  // size_type NewCapacity = OldCapacity + (OldCapacity / 2);
+  size_type NewCapacity = OldCapacity * 2;
   NewCapacity = std::max(NewCapacity, Cap);
   assert(NewCapacity < DynBuf::MaxSize() && "Range error!");
   char* OldPtr = this->Data;
@@ -409,72 +465,334 @@ const char* FmtValue::getTypeName() const {
 // Formatter
 //======================================================================//
 
+namespace {
+
+namespace HH {
+  template <bool>
+  struct TestType { using type = void; };
+
+  template <>
+  struct TestType<false> {};
+
+  template <typename T>
+  using MetaVoidT = std::void_t<typename TestType<T::value>::type>;
+
+  template <bool B>
+  using MetaVoidV = std::void_t<typename TestType<B>::type>;
+
+  template <std::size_t N>
+  static constexpr bool isPow2 = !(N & (N - 1));
+
+  template <std::size_t N>
+  static constexpr bool isValidPow2 = (N > 1) && isPow2<N>;
+
+  /// LUT is in the range (0, 32].
+  static constexpr std::uint64_t baseLog10LUT[] {
+    0, 1, 3, 4, 6, 6, 7, 8, 9, 9,
+    10, 10, 10, 11, 11, 11, 12, 12,
+    12, 12, 13, 13, 13, 13, 13, 13,
+    14, 14, 14, 14, 14, 14, 15
+  };
+
+  /// LUT is in the range (0, 32].
+  static constexpr std::uint64_t baseLog2LUT[] {
+    0, 0, 1, 1, 2, 2, 2, 2, 3,
+    3, 3, 3, 3, 3, 3, 3, 4,
+    4, 4, 4, 4, 4, 4, 4, 4,
+    4, 4, 4, 4, 4, 4, 4, 5
+  };
+} // namespace HH
+
 template <std::size_t Base>
-static inline int countDigitsFallback(std::uint64_t V) {
-  static constexpr std::size_t Base2 = Base * Base;
-  static constexpr std::size_t Base3 = Base * Base2;
-  static constexpr std::size_t Base4 = Base * Base3;
-  int Total = 1;
-  while (true) {
-    if (V < Base)  return Total;
-    if (V < Base2) return Total + 1;
-    if (V < Base3) return Total + 2;
-    if (V < Base4) return Total + 3;
-    V /= Base4;
-    Total += 4;
+struct BaseTraits {
+  static_assert((Base > 0) && (Base <= 32), "Base out of range!");
+  static constexpr bool isPow2 = HH::isPow2<Base>;
+  static constexpr std::size_t pow1 = Base;
+  static constexpr std::size_t pow2 = pow1 * pow1;
+  static constexpr std::size_t pow3 = pow1 * pow2;
+  static constexpr std::size_t pow4 = pow2 * pow2;
+
+  /// The formula for determining the digits of a number in
+  /// a different base is `floor(log10(n)/log10(base)) + 1`.
+  /// We can approximate this by using `~log10(x) * 10` as the inputs.
+  /// Since we only accept bases in the range [1, 32], and know the 
+  /// maximum size in base 10, so it's easiest to just use a LUT.
+  static constexpr std::size_t maxDigits = 
+    (192 / HH::baseLog10LUT[Base]) + 1;
+  
+  /// Similar to `maxDigits`, this just indexes a LUT.
+  static constexpr std::size_t shiftCount = HH::baseLog2LUT[Base];
+};
+
+/// @brief Generic integer formatting base class.
+/// @tparam Base The radix base of the type.
+template <std::size_t Base>
+class GIntFormat {
+  using BT = BaseTraits<Base>;
+public:
+  static inline int Count(std::uint64_t V) {
+    int Total = 1;
+    while (true) {
+      if (V < BT::pow1) return Total;
+      if (V < BT::pow2) return Total + 1;
+      if (V < BT::pow3) return Total + 2;
+      if (V < BT::pow4) return Total + 3;
+      V /= BT::pow4;
+      Total += 4;
+    }
+    SLIMFMT_UNREACHABLE;
   }
-  SLIMFMT_UNREACHABLE;
+
+  static inline bool Write(SmallBufBase& Buf,
+   std::uint64_t V, bool Upper = false) {
+    // Make a buffer that fits the digits.
+    static constexpr std::size_t BufLen = BT::maxDigits;
+    char LocalBuf[BufLen + 1] {};
+    char* End = (LocalBuf + BufLen), *Out = End;
+    const char* Digits = Upper 
+      ? "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      : "0123456789abcdefghijklmnopqrstuvwxyz";
+    // Loop until the value is zero.
+    while (V != 0) {
+      auto Digit = unsigned(V % Base);
+      if constexpr (Base <= 10)
+        *(--Out) = ('0' + Digit);
+      else
+        *(--Out) = Digits[Digit];
+      V /= Base;
+    }
+
+    Buf.append(Out, End);
+    return true;
+  }
+};
+
+/// @brief An integer formatting utility class.
+/// @tparam Base The radix base of the type.
+template <std::size_t Base, typename = void>
+class IntFormat : public GIntFormat<Base> {
+public:
+  using GIntFormat<Base>::Count;
+  using GIntFormat<Base>::Write;
+};
+
+/// @brief Explicit specialization for powers of 2, >=2.
+/// @tparam Base The radix base of the type.
+template <std::size_t Base>
+class IntFormat<Base, HH::MetaVoidV<HH::isValidPow2<Base>>> {
+  using BT = BaseTraits<Base>;
+public:
+  static inline int Count(std::uint64_t V) {
+  #ifdef SLIMFMT_CLZLL
+    return (intLog2(V) / BT::shiftCount) + 1;
+  #else
+    return GIntFormat<Base>::Count(V);
+  #endif
+  }
+
+  static inline bool Write(SmallBufBase& Buf,
+   std::uint64_t V, [[maybe_unused]] bool Upper = false) {
+    static constexpr std::size_t BufLen = BT::maxDigits;
+    char LocalBuf[BufLen + 1] {};
+    char* End = (LocalBuf + BufLen), *Out = End;
+    const char* Digits = Upper 
+      ? "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      : "0123456789abcdefghijklmnopqrstuvwxyz";
+    do {
+      constexpr std::uint64_t Mask = 
+        ((1ULL << BT::shiftCount) - 1ULL);
+      // Mask off the lower bits of the value.
+      auto Digit = unsigned(V & Mask);
+      if constexpr (Base < 10)
+        *(--Out) = char('0' + Digit);
+      else
+        *(--Out) = Digits[Digit];
+    } while((V >>= BT::shiftCount) != 0U);
+
+    Buf.append(Out, End);
+    return true;
+  }
+};
+
+/// @brief Explicit specialization for base 10.
+template <> class IntFormat<10> {
+  using BT = BaseTraits<10>;
+protected:
+  static constexpr const char* DigitsGroup(std::size_t Value) {
+    return 
+      &"0001020304050607080910111213141516171819"
+       "2021222324252627282930313233343536373839"
+       "4041424344454647484950515253545556575859"
+       "6061626364656667686970717273747576777879"
+       "8081828384858687888990919293949596979899"[Value * 2];
+  }
+
+  static inline void WriteDigitsGroup(char*& Out, std::uint64_t& V) {
+    const auto Str = DigitsGroup(V % 100);
+    Out -= 2;
+    Out[0] = Str[0];
+    Out[1] = Str[1];
+    V /= 100;
+  }
+
+public:
+  static inline int Count(std::uint64_t V) {
+  #ifdef SLIMFMT_CLZLL
+    static constexpr std::uint64_t LogTable[] {
+      1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 4,
+      5, 5, 5, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9, 9, 
+      10, 10, 10, 10, 11, 11, 11, 12, 12, 12,
+      13, 13, 13, 13, 14, 14, 14, 15, 15, 15, 16, 16, 16, 16, 
+      17, 17, 17, 18, 18, 18, 19, 19, 19, 19, 20
+    };
+    static constexpr std::uint64_t ZeroOrPow10[] {
+      0, 0, 10, 
+      100, 1000,
+      10000, 100000, 
+      1000000, 10000000, 
+      100000000, 1000000000, 
+      10000000000, 100000000000, 
+      1000000000000, 10000000000000, 
+      100000000000000, 1000000000000000, 
+      10000000000000000, 100000000000000000, 
+      1000000000000000000, 10000000000000000000ULL
+    };
+    const int Out = LogTable[intLog2(V)];
+    return Out - (V < ZeroOrPow10[Out]);
+  #else
+    return GIntFormat<10>::Count(V);
+  #endif
+  }
+
+  static inline bool Write(SmallBufBase& Buf,
+   std::uint64_t V, [[maybe_unused]] bool Upper = false) {
+    static constexpr std::size_t BufLen = BT::maxDigits;
+    char LocalBuf[BufLen + 1] {};
+    char* End = (LocalBuf + BufLen), *Out = End;
+    // Loop in groups of 100.
+    while (V >= 100)
+      WriteDigitsGroup(Out, V);
+    // If only one digit remains, write that and return.
+    if (V < 10) {
+      *(--Out) = char('0' + V);
+      Buf.append(Out, End);
+      return true;
+    }
+    WriteDigitsGroup(Out, V);
+    Buf.append(Out, End);
+    return true;
+  }
+};
+
+/// @brief Explicit specialization for base 1.
+template <> class IntFormat<1> {
+public:
+  static inline int Count(std::uint64_t V) {
+    dbgassert(V < INT_MAX && "Range Error!");
+    // Range the expression to `11111111...`.
+    return (V <= 64) ? (V | 1) : (64 + 3);
+  }
+
+  static inline bool Write(SmallBufBase& Buf,
+   std::uint64_t V, [[maybe_unused]] bool Upper = false) {
+    static constexpr char UnaryString[] =
+      "1111111111111111""1111111111111111"
+      "1111111111111111""1111111111111111";
+    if (V == 0) {
+      Buf.pushBack('0');
+      return true;
+    }
+    const auto Off = std::min(64ULL, V);
+    Buf.append(UnaryString, Off);
+    if (V > 64)
+      Buf.append("...", 3);
+    return true;
+  }
+};
+
+} // namespace `anonymous`
+
+struct RadixInt {
+  std::uint64_t Val;
+  std::size_t Radix;
+};
+
+template <std::size_t Base>
+static bool formatCustomBridgeN(
+ sfmt::SmallBuf<128>& Buf, const RadixInt& IRad) {
+  if (Base == IRad.Radix) {
+    (void) IntFormat<Base>::Write(Buf, IRad.Val);
+    const int Count = IntFormat<Base>::Count(IRad.Val);
+    if constexpr (HH::isPow2<Base>) {
+      Buf.appendStr(", Count: ");
+      IntFormat<10>::Write(Buf, std::uint64_t(Count));
+      Buf.appendStr("; shiftCount: ");
+      IntFormat<10>::Write(Buf, BaseTraits<Base>::shiftCount);
+    } else {
+      Buf.appendStr(", ");
+      IntFormat<10>::Write(Buf, std::uint64_t(Count));
+    }
+    return true;
+  }
+  return false;
 }
 
-template <std::size_t Base = 10>
-static inline int countDigits(std::uint64_t Value) {
-  return countDigitsFallback<Base>(Value);
+template <std::size_t...NN>
+static void formatCustomBridge(
+ sfmt::SmallBuf<128>& Buf, const RadixInt& IRad, 
+ std::index_sequence<NN...>) {
+  static_assert(sizeof...(NN) <= 32);
+  if ((formatCustomBridgeN<NN + 1>(Buf, IRad) || ...))
+    return;
+  dbgassert(false && "Invalid Radix!");
 }
 
-template <>
-inline int countDigits<2>(std::uint64_t Value) {
-#ifdef SLIMFMT_CLZLL
-  // Mask so Value is always >1.
-  return SLIMFMT_CLZLL(Value | 1);
-#else
-  return countDigitsFallback<2>(Value);
-#endif
+void format_custom(const Formatter& Fmt, RadixInt IRad) {
+  sfmt::SmallBuf<128> Buf;
+  Buf.pushBack('{');
+  formatCustomBridge(Buf, IRad, std::make_index_sequence<32>{});
+  Buf.pushBack('}');
+  Fmt.write(Buf);
 }
 
-template <>
-inline int countDigits<10>(std::uint64_t Value) {
-#ifdef SLIMFMT_CLZLL
-  // TODO: Add clzll speedup
-#endif
-  return countDigitsFallback<10>(Value);
+void testRadixA(std::uint64_t Val, std::size_t Radix) {
+  const RadixInt IRad {Val, Radix};
+  sfmt::println("{{{}, {}}: {}", Val, Radix, IRad);
 }
 
-template <std::size_t Base = 10>
-static inline int countDigits(const std::int64_t Value) {
-  const auto UValue = std::uint64_t(std::llabs(Value));
-  return countDigits<Base>(UValue) + (Value < 0);
+void testRadix(std::uint64_t Val, std::size_t Radix) {
+  testRadixA(Val, Radix);
+  if (!(Radix & (Radix - 1))) {
+    sfmt::print("  ");
+    testRadixA(Val, 2);
+  }
+  std::fflush(stdout);
 }
 
 template <typename T>
 static inline int countDigitsDispatch(T Value, BaseType Base) {
+  static_assert(std::is_integral_v<T>, "Invalid value type!");
+  const auto Norm = static_cast<std::uint64_t>(Value);
   switch (Base) {
    case BaseType::Bin:
-    return countDigits<2>(Value);
+    return IntFormat<2>::Count(Value);
    case BaseType::Oct:
-    return countDigits<8>(Value);
+    return IntFormat<8>::Count(Value);
    case BaseType::Dec:
-    return countDigits<10>(Value);
+    return IntFormat<10>::Count(Value);
    case BaseType::Hex:
-    return countDigits<16>(Value);
+    return IntFormat<16>::Count(Value);
    default: {
-    assert(false && "Invalid base!");
+    dbgassert(false && "Invalid base!");
     return 0;
    }
   }
 }
 
 int Formatter::CountDigits(long long Value, BaseType Base) {
-  return countDigitsDispatch(std::int64_t(Value), Base);
+  const int Sign = (Value < 0LL);
+  const auto Norm = std::uint64_t(std::llabs(Value));
+  return countDigitsDispatch(Norm, Base) + Sign;
 }
 
 int Formatter::CountDigits(unsigned long long Value, BaseType Base) {
@@ -483,7 +801,7 @@ int Formatter::CountDigits(unsigned long long Value, BaseType Base) {
 
 std::size_t Formatter::getValueSize(FmtValue Value) const {
   if SLIMFMT_UNLIKELY(Value.isGenericType()) {
-    assert(false && "Cannot get the size of generic types!");
+    dbgassert(false && "Cannot get the size of generic types!");
     return 0U;
   }
 
@@ -507,12 +825,12 @@ std::size_t Formatter::getValueSize(FmtValue Value) const {
     return Len;
   }
 
-  assert(false && "Invalid value type!");
+  dbgassert(false && "Invalid value type!");
   SLIMFMT_UNREACHABLE;
 }
 
 bool Formatter::formatValue(FmtValue Value) const {
-  assert(ParsedReplacement.isFormat() && "Invalid formatter state!");
+  dbgassert(ParsedReplacement.isFormat() && "Invalid formatter state!");
   // Pass off generics early, as their size cannot be determined.
   if (auto* Generic = Value.getGeneric())
     return this->write(*Generic);
@@ -522,7 +840,7 @@ bool Formatter::formatValue(FmtValue Value) const {
   auto& Spec = ParsedReplacement;
 
   if SLIMFMT_UNLIKELY(Spec.Base == BaseType::Invalid) {
-    assert(false && "Invalid base type!");
+    dbgassert(false && "Invalid base type!");
     const auto FillAmount = std::max(Len, Spec.Align);
     Buf.fill(FillAmount, Spec.Pad);
     return false;
@@ -578,74 +896,8 @@ bool Formatter::write(FmtValue Value) const {
   else if (Value.isStrType())
     return this->write(Value.getStr());
   
-  assert(false && "Invalid value type!");
+  dbgassert(false && "Invalid value type!");
   SLIMFMT_UNREACHABLE;
-}
-
-// Converts value in the range [0, 100) to a string.
-static constexpr const char* digitsDec2(std::size_t Value) {
-  return 
-    &"0001020304050607080910111213141516171819"
-     "2021222324252627282930313233343536373839"
-     "4041424344454647484950515253545556575859"
-     "6061626364656667686970717273747576777879"
-     "8081828384858687888990919293949596979899"[Value * 2];
-}
-
-// This function is the unified medium to write int-like types out.
-template <std::size_t Base>
-static inline bool formatUInt(SmallBufBase& Buf, std::uint64_t V, bool Upper = false) {
-  static_assert(Base <= 16, "Base out of range!");
-  static constexpr bool IsPow2 = false && ((Base & (Base - 1)) == 0);
-  static constexpr std::size_t Base2 = (Base * Base);
-
-  // Make a buffer that fits the digits.
-  static constexpr std::size_t BufLen = (8 * 16 * 2) / Base;
-  char LocalBuf[BufLen + 1] {};
-  char* End = (LocalBuf + BufLen);
-  char* Out = End;
-
-  if constexpr (IsPow2) {
-    do {
-      const char* Digits = Upper 
-        ? "0123456789ABCDEF"
-        : "0123456789abcdef";
-      // Mask off the lower bits of the value.
-      auto Digit = unsigned(V & ((1 << Base) - 1));
-      *(--Out) = Digits[Digit];
-    } while((V >>= Base) != 0U);
-  } else if constexpr (Base == 10) {
-    // Hardcoded this for now. Original implementation
-    // can be found in fmtlib.
-    while (V >= 100) {
-      Out -= 2;
-      const auto Str = digitsDec2(V % 100);
-      Out[0] = Str[0];
-      Out[1] = Str[1];
-      V /= 100;
-    }
-    if (V < 10) {
-      *(--Out) = char('0' + V);
-      Buf.append(Out, End);
-      return true;
-    }
-    Out -= 2;
-    const auto Str = digitsDec2(V % 100);
-    Out[0] = Str[0];
-    Out[1] = Str[1];
-  } else /* Not 2^N */ {
-    while (V != 0) {
-      const char* Digits = Upper 
-        ? "0123456789ABCDEF"
-        : "0123456789abcdef";
-      auto Digit = unsigned(V % Base);
-      *(--Out) = Digits[Digit];
-      V /= Base;
-    }
-  }
-
-  Buf.append(Out, End);
-  return true;
 }
 
 bool Formatter::write(unsigned long long Value) const {
@@ -659,15 +911,15 @@ bool Formatter::write(unsigned long long Value) const {
     (Spec.Extra == ExtraType::Ptr);
   switch (Spec.Base) {
    case BaseType::Bin:
-    return formatUInt<2>(Buf, Value);
+    return IntFormat<2>::Write(Buf, Value);
    case BaseType::Oct:
-    return formatUInt<8>(Buf, Value);
+    return IntFormat<8>::Write(Buf, Value);
    case BaseType::Dec:
-    return formatUInt<10>(Buf, Value);
+    return IntFormat<10>::Write(Buf, Value);
    case BaseType::Hex:
-    return formatUInt<16>(Buf, Value, UseUpper);
+    return IntFormat<16>::Write(Buf, Value, UseUpper);
    default: {
-    assert(false && "Invalid base.");
+    dbgassert(false && "Invalid base.");
     return false;
    }
   }
@@ -708,6 +960,11 @@ bool Formatter::write(const AnyFmt& Generic) const {
   return true;
 }
 
+bool Formatter::write(const SmallBufBase& InBuf) const {
+  Buf.append(InBuf.begin(), InBuf.end());
+  return true;
+}
+
 //=== Spec Parsing ===//
 
 void Formatter::setReplacementSubstr(std::size_t Len) {
@@ -745,7 +1002,7 @@ static AlignType parseRSpecSide(StrView& Spec) {
     case '-':
     case '>': return AlignType::Right;
     default: {
-      assert(false && "Invalid alignment specifier!");
+      dbgassert(false && "Invalid alignment specifier!");
       return AlignType::Default;
     }
   }
@@ -774,7 +1031,7 @@ static std::size_t parseRSpecAlign(StrView& Spec) {
   if SLIMFMT_UNLIKELY(EC != std::errc{}) {
     auto Err = std::make_error_code(EC).message();
     std::fprintf(stderr, "\"%s\" at %c.\n", Err.c_str(), *Ptr);
-    assert(false && "Invalid width specifier!");
+    dbgassert(false && "Invalid width specifier!");
     return 0;
   }
 
@@ -786,7 +1043,7 @@ static std::pair<BaseType, ExtraType> parseRSpecOptions(StrView S) {
     return {BaseType::Default, ExtraType::Default};
   
   // Valid spec options can currently only be 2 characters long.
-  assert(S.size() < 3 && "Spec options too long!");
+  dbgassert(S.size() < 3 && "Spec options too long!");
   BaseType Base = BaseType::Default;
   ExtraType Extra = ExtraType::Default;
 
@@ -801,50 +1058,50 @@ static std::pair<BaseType, ExtraType> parseRSpecOptions(StrView S) {
 
   // Determine the Option type.
   switch (S[0]) {
-   // Bases:
-   case 'B':
-   case 'b': {
-    Base = BaseType::Bin;
-    break;
-   }
-   case 'O':
-   case 'o': {
-    Base = BaseType::Oct;
-    break;
-   }
-   case 'D':
-   case 'd': {
-    Base = BaseType::Dec;
-    break;
-   }
-   case 'H':
-   case 'X':
-    Extra = ExtraType::Uppercase;
-   case 'x':
-   case 'h': {
-    Base = BaseType::Hex;
-    break;
-   }
+    // Bases:
+    case 'B':
+    case 'b': {
+      Base = BaseType::Bin;
+      break;
+    }
+    case 'O':
+    case 'o': {
+      Base = BaseType::Oct;
+      break;
+    }
+    case 'D':
+    case 'd': {
+      Base = BaseType::Dec;
+      break;
+    }
+    case 'H':
+    case 'X':
+      Extra = ExtraType::Uppercase;
+    case 'x':
+    case 'h': {
+      Base = BaseType::Hex;
+      break;
+    }
 
-   // Extra:
-   case 'P':
-   case 'p': {
-    assert(Extra == ExtraType::None && 
-      "Type specifier will be overwritten!");
-    Base = BaseType::Hex;
-    // Pointers always print lowercase.
-    Extra = ExtraType::Ptr;
-    break;
-   }
-   case 'C':
-   case 'c': {
-    assert(Extra == ExtraType::None && 
-      "Type specifier will be overwritten!");
-    Extra = ExtraType::Char;
-    break;
-   }
-   default:
-    assert(false && "Invalid spec option!");
+    // Extra:
+    case 'P':
+    case 'p': {
+      dbgassert(Extra == ExtraType::None && 
+        "Type specifier will be overwritten!");
+      Base = BaseType::Hex;
+      // Pointers always print lowercase.
+      Extra = ExtraType::Ptr;
+      break;
+    }
+    case 'C':
+    case 'c': {
+      dbgassert(Extra == ExtraType::None && 
+        "Type specifier will be overwritten!");
+      Extra = ExtraType::Char;
+      break;
+    }
+    default:
+      dbgassert(false && "Invalid spec option!");
   }
 
   return {Base, Extra};
@@ -869,13 +1126,13 @@ bool Formatter::parseReplacementSpec(StrView Spec) {
   /// Check if we have an align/width specifier.
   if (Spec.front() == ':') {
     if SLIMFMT_UNLIKELY(Spec.size() <= 1) {
-      assert(false && "Spec string not long enough!");
+      dbgassert(false && "Spec string not long enough!");
       this->ParsedReplacement = FmtReplacement();
       return false;
     }
     Pad = Spec[1];
     if SLIMFMT_UNLIKELY(Pad < ' ' || Pad > 0x7F) {
-      assert(false && "Invalid padding type!");
+      dbgassert(false && "Invalid padding type!");
       Pad = ' ';
     }
     Spec.remove_prefix(2);
@@ -888,7 +1145,7 @@ bool Formatter::parseReplacementSpec(StrView Spec) {
   // If it doesn't currently start with this, the
   // format specifier is invalid.
   if SLIMFMT_UNLIKELY(Spec.front() != '%' || Spec.size() <= 1) {
-    assert(false && "Invalid extra format specifier!");
+    dbgassert(false && "Invalid extra format specifier!");
     this->ParsedReplacement = FmtReplacement();
     return false;
   }
@@ -921,7 +1178,7 @@ bool Formatter::parseNextReplacement() {
 
   std::size_t BraceClose = FormatString.find_first_of('}');
   if (BraceClose == StrView::npos) {
-    assert(false && "Unterminated format specifier. "
+    dbgassert(false && "Unterminated format specifier. "
       "Use {{ to escape a sequence.");
     this->setReplacementSubstr();
     FormatString = "";
@@ -990,7 +1247,7 @@ void Formatter::parseWith(FmtValue::List Values) {
   FmtValueSpan Vs {Values};
   while (this->parseNextReplacement()) {
     if SLIMFMT_UNLIKELY(ParsedReplacement.isEmpty()) {
-      assert(false && "Parse Failure!");
+      dbgassert(false && "Parse Failure!");
       return;
     }
     // Check if format is normal string.
@@ -1001,15 +1258,15 @@ void Formatter::parseWith(FmtValue::List Values) {
     // If the format specifier used dynamic alignment (*),
     // we extract an argument as an integer, and use that as the value.
     if (ParsedReplacement.hasDynAlign()) {
-      assert(Vs.canTakePair() && "Not enough arguments for dynamic align!");
+      dbgassert(Vs.canTakePair() && "Not enough arguments for dynamic align!");
       const FmtValue* Align = Vs.take();
-      assert(Align->isIntType(true) && "Invalid dynamic alignment type!");
+      dbgassert(Align->isIntType(true) && "Invalid dynamic alignment type!");
       ParsedReplacement.Align = Align->getInt(true);
     }
     // Use the value as the dispatcher for parsing.
     // There should be at least one argument here.
     if SLIMFMT_UNLIKELY(!Vs.canTake()) {
-      assert(false && "Not enough arguments!");
+      dbgassert(false && "Not enough arguments!");
       return;
     }
     const FmtValue* Value = Vs.take();
@@ -1018,5 +1275,5 @@ void Formatter::parseWith(FmtValue::List Values) {
       return;
   }
 
-  assert(Vs.isEmpty() && "Too many arguments passed to formatter!");
+  dbgassert(Vs.isEmpty() && "Too many arguments passed to formatter!");
 }
