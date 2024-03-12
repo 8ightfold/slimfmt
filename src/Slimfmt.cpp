@@ -677,7 +677,7 @@ bool Formatter::write(unsigned long long Value) const {
 bool Formatter::write(long long Value) const {
   if (Value < 0)
     Buf.pushBack('-');
-  const std::uint64_t UValue = std::llabs(Value);
+  const unsigned long long UValue = std::llabs(Value);
   return this->write(UValue);
 }
 
@@ -685,8 +685,8 @@ bool Formatter::write(const void* Ptr) const {
   const auto Base = ParsedReplacement.Base;
   Buf.pushBack('0');
   Buf.pushBack("bodx"[int(Base)]);
-  return this->write(
-    reinterpret_cast<std::uintptr_t>(Ptr));
+  const auto IPtr = reinterpret_cast<std::uintptr_t>(Ptr);
+  return this->write((unsigned long long)IPtr);
 }
 
 bool Formatter::write(char C) const {
@@ -948,8 +948,15 @@ bool Formatter::parseNextReplacement() {
 
 namespace {
   struct FmtValueSpan {
+  #if !defined(__clang__) && (__GNUC__ >= 9)
+  # pragma GCC diagnostic push
+  # pragma GCC diagnostic ignored "-Winit-list-lifetime"
+  #endif
     explicit FmtValueSpan(FmtValue::List Values) :
      Begin(Values.begin()), End(Values.end()) {}
+  #if !defined(__clang__) && (__GNUC__ >= 9)
+  # pragma GCC diagnostic pop
+  #endif
   public:
     const FmtValue* take() {
       if SLIMFMT_UNLIKELY(this->isEmpty())

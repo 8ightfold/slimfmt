@@ -895,75 +895,16 @@ struct FmtString : public std::string_view {
 
 namespace sfmt {
 
-namespace H {
-  template <bool B>
-  struct TestType { using type = void; };
-
-  template <>
-  struct TestType<false> {};
-
-  template <typename T>
-  using MetaVoidT = std::void_t<typename TestType<T::value>::type>;
-
-  //=== Estimation ===//
-
-  template <typename T, typename = void>
-  struct EstimateBufSize {
-    static constexpr std::size_t value = 8;
-  };
-
-  template <>
-  struct EstimateBufSize<char> {
-    static constexpr std::size_t value = 1;
-  };
-
-  template <typename Int>
-  struct EstimateBufSize<Int, H::MetaVoidT<std::is_integral<Int>>> {
-    static constexpr std::size_t value = sizeof(Int) * 2;
-  };
-
-  template <typename T>
-  struct EstimateBufSize<T*> {
-    static constexpr std::size_t value = 2 * sizeof(void*) + 2;
-  };
-
-  template <std::size_t N>
-  struct EstimateBufSize<char[N]> {
-    static constexpr std::size_t value = N - 1;
-  };
-
-  template <>
-  struct EstimateBufSize<const char*> {
-    static constexpr std::size_t value = 16;
-  };
-
-  template <>
-  struct EstimateBufSize<std::string> :
-   EstimateBufSize<const char*> { };
-
-  template <>
-  struct EstimateBufSize<StrView> :
-   EstimateBufSize<const char*> { };
-
-  template <typename T>
-  inline constexpr std::size_t estimate_buf_v 
-    = EstimateBufSize<RemoveCVRef<T>>::value;
-
-  template <typename...TT>
-  inline constexpr std::size_t estimate_bufs = 
-    (0 + ... + estimate_buf_v<TT>);
-} // namespace H
-
-#if 0
-template <std::size_t N, typename...TT>
+template <std::size_t N>
 using SmallBufEstimateType = 
-  SmallBuf<N - (sizeof...(TT) * 2 + 1) 
-    + H::estimate_bufs<TT...>>;
-#else
+  SmallBuf<(N > 64) ? 256 : 128>;
+
 template <std::size_t N, typename...TT>
-using SmallBufEstimateType = 
-  SmallBuf<(N > 64) ? 256 : 64>;
-#endif
+void nulls(const char(&Str)[N], TT&&...Args) {
+  SmallBufEstimateType<N> Buf;
+  Formatter Fmt {Buf, {Str, N}};
+  Fmt.parseWith({FmtValue{Args}...});
+}
 
 template <std::size_t N, typename...TT>
 std::string format(const char(&Str)[N], TT&&...Args) {

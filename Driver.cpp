@@ -1,5 +1,6 @@
 #define SLIMFMT_CXPR_CHECKS 0
 #include <Slimfmt.hpp>
+#include <chrono>
 #include <iostream>
 
 using namespace sfmt;
@@ -37,14 +38,38 @@ void testBuf() {
 }
 
 int main() {
+  namespace chrono = std::chrono;
+  using TimerType = chrono::high_resolution_clock;
+
   std::string Str = "yeah!!";
   CustomType  Any = {"sooo"};
-  sfmt::println("Testing, testing, {}!",      "123");
-  sfmt::println("Testing, testing, {: +10}!", 123);
-  sfmt::println("Testing, testing, {: =*%D}!",  10, "123");
-  sfmt::println("Testing, testing, {: -10}!", 123);
-  sfmt::println("{%b}, {}, {} {}!!", 42, "it's great", Any, Str);
-  sfmt::println("{}, {%o}, {} {}!!", "it's great", 42, Str, Any);
-  sfmt::println("{}, {}, {%d} {}!!", Any, "it's great", 42, Str);
-  sfmt::println("{}, {}, {} {%X}!!", Str, Any, "it's great", 42);
+
+  const std::int64_t Iters = 100000;
+  auto Start = TimerType::now();
+  for (std::int64_t I = 0; I < Iters; ++I) {
+    sfmt::nulls("Testing, testing, {}!",      "123");
+    sfmt::nulls("Testing, testing, {: +10}!", 123);
+    sfmt::nulls("Testing, testing, {: =*%D}!", 10, "123");
+    sfmt::nulls("Testing, testing, {: -10}!", 123);
+    sfmt::nulls("Testing, testing, {%c}!", "ABC");
+    sfmt::nulls("{%b}, {}, {} {}!!", 42, "it's great", Any, Str);
+    sfmt::nulls("{}, {%o}, {} {}!!", "it's great", 42, Str, Any);
+    sfmt::nulls("{}, {}, {%d} {}!!", Any, "it's great", 42, Str);
+    sfmt::nulls("{}, {}, {} {%X}!!", Str, Any, "it's great", 42);
+    sfmt::nulls("\n\n");
+    sfmt::nulls("Testing, testing, {}!!",      "123");
+    sfmt::nulls("Testing, testing, {: +10}!!", 123);
+    sfmt::nulls("Testing, testing, {: =*%D}!!", 10, "123");
+    sfmt::nulls("Testing, testing, {: -10}!!", 123);
+    sfmt::nulls("Testing, testing, {%c}!!", "ABC");
+    sfmt::nulls("{%b}, {}, {} {}!", 42, "it's great", Any, Str);
+    sfmt::nulls("{}, {%o}, {} {}!", "it's great", 42, Str, Any);
+    sfmt::nulls("{}, {}, {%d} {}!", Any, "it's great", 42, Str);
+    sfmt::nulls("{}, {}, {} {%X}!", Str, Any, "it's great", 42);
+  }
+  auto End = TimerType::now();
+  const chrono::duration<double> Secs = End - Start;
+
+  std::cout << "Took " << Secs.count() << "s to do "
+    << Iters << " iterations." << std::endl;
 }
