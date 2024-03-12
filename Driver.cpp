@@ -42,8 +42,9 @@ struct CustomType {
   const char* Str;
 };
 
-void format_custom(const Formatter&, const CustomType& Val) {
-  std::printf("`%s`\n", Val.Str ? Val.Str : "");
+void format_custom(const Formatter& Fmt, const CustomType& Val) {
+  const std::size_t Len = (Val.Str ? std::strlen(Val.Str) : 0);
+  Fmt.write({Val.Str, Len});
 }
 
 void testBuf() {
@@ -70,14 +71,14 @@ void testBuf() {
 }
 
 int main() {
-  // std::string Str = "yeah!!";
-  // CustomType  Any = {"sooo"};
+  std::string Str = "yeah!!";
+  CustomType  Any = {"sooo"};
   test("Testing, testing, {}!",      "123");
-  test("Testing, testing, {: +10}!", "123");
+  test("Testing, testing, {: +10}!", 123);
   test("Testing, testing, {: =*}!",  10, "123");
-  test("Testing, testing, {: -10}!", "123");
-  // testf("First: {%x}, {}, {} {}!!", 42, "it's great", Any, Str);
-  // testf("First: {}, {%x}, {} {}!!", "it's great", 42, Str, Any);
-  // testf("First: {}, {}, {%x} {}!!", Any, "it's great", 42, Str);
-  // testf("First: {}, {}, {%x} {}!!", Str, Any, "it's great", 42);
+  test("Testing, testing, {: -10}!", 123);
+  test("{%b}, {}, {} {}!!", 42, "it's great", Any, Str);
+  test("{}, {%o}, {} {}!!", "it's great", 42, Str, Any);
+  test("{}, {}, {%d} {}!!", Any, "it's great", 42, Str);
+  test("{}, {}, {} {%X}!!", Str, Any, "it's great", 42);
 }

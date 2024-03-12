@@ -633,6 +633,8 @@ public:
 namespace sfmt {
 
 class FmtValue {
+  friend struct Formatter;
+
   enum ValueType : std::uint8_t {
     CharType,
     SignedType,
@@ -684,7 +686,7 @@ public:
   bool isStrType(bool Permissive = false) const noexcept;
 
   /// Checks if the current value is a pointer type.
-  /// @param Permissive If C strings are considered a pointer.
+  /// @param Permissive If Cstrings are considered a pointer.
   bool isPtrType(bool Permissive = false) const noexcept {
     const bool Extra = Permissive && (Type == CStringType);
     return Extra || (Type == PtrType);
@@ -696,8 +698,12 @@ public:
   }
 
   /// Extracts the current value as an integer.
-  /// @returns `0` if an error occurred.
-  unsigned long long getInt(bool Permissive = false) const;
+  /// @returns `0` if an error occurred (check `isIntType()`).
+  long long getInt(bool Permissive = false) const;
+
+  /// Extracts the current value as an unsigned integer.
+  /// @returns `0` if an error occurred (check `isIntType()`).
+  unsigned long long getUInt(bool Permissive = false) const;
 
   /// Extracts the current value as a character.
   /// @returns `'\0'` if an error occurred.
@@ -707,14 +713,17 @@ public:
   /// @returns `{nullptr, 0}` if an error occurred.
   StrAndLen getStr(bool Permissive = false) const;
 
+  /// Extracts the current value as a constant opaque pointer.
+  /// @returns `nullptr` if an error occured (check `isPtrType()`).
+  const void* getPtr(bool Permissive = false) const;
+
+  /// Extracts the current value as a generic.
+  /// @returns `nullptr` if an error occurred.
+  const AnyFmt* getGeneric() const;
 
   /// Gets the name of the active value type.
   /// @returns A constant string.
   const char* getTypeName() const;
-
-  /// Writes the active value to the provided formatter.
-  /// @returns `true` on error.
-  bool formatTo(const Formatter& Fmt) const;
 
 public:
   FmtValue(char C) : Type(CharType) {
@@ -776,6 +785,20 @@ private:
 
 //=== Format Specific ===//
 
+enum class BaseType {
+  Bin = 0, 
+  Oct = 1, 
+  Dec = 2,
+  Hex = 3,
+  Default = Dec,
+  Invalid = -1
+};
+
+enum class ExtraType {
+  None, Uppercase, Char, Ptr,
+  Default = None
+};
+
 enum class AlignType {
   Left, Right, Center,
   Default = Left
@@ -790,23 +813,24 @@ public:
    Type(Literal), Data(Str) {}
   
   FmtReplacement(
-    StrView Spec, StrView Options,
-    AlignType Side, std::size_t Align, char Pad) :
-   Type(Format), Data(Spec), Options(Options),
+    StrView Spec, BaseType Base, ExtraType Extra,
+    AlignType Side, std::size_t Align, char Pad = ' ') :
+   Type(Format), Data(Spec), Base(Base), Extra(Extra),
    Side(Side), Align(Align), Pad(Pad) {}
 
 public:
-  bool isEmpty() const   { return Type == RType::Empty; }
+  bool isEmpty()   const { return Type == RType::Empty; }
   bool isLiteral() const { return Type == RType::Literal; }
-  bool isFormat() const  { return Type == RType::Format; }
+  bool isFormat()  const { return Type == RType::Format; }
   bool hasDynAlign() const { return Align == dynamicAlign; }
 
 public:
   RType Type = RType::Empty;
   StrView Data;
-  StrView Options;
-  AlignType Side = AlignType::Default;
+  BaseType Base = BaseType::Default;
+  ExtraType Extra = ExtraType::Default;
   std::size_t Align = 0;
+  AlignType Side = AlignType::Default;
   char Pad = '\0';
 };
 
@@ -816,17 +840,36 @@ struct Formatter {
    FormatString(Str), Buf(Buf), IsPermissive(Permissive) {}
 public:
   SmallBufBase* operator->() const { return &Buf; }
+  bool isPermissive() const { return this->IsPermissive; }
   const FmtReplacement& getLastReplacement() const& {
     return this->ParsedReplacement;
   }
-  bool isPermissive() const { return this->IsPermissive; }
-  void parseWith(FmtValue::List Values);
+
   bool parseNextReplacement();
   bool parseReplacementSpec(StrView Spec);
+  void parseWith(FmtValue::List Values);
+
+public:
+  static int CountDigits(long long Value, BaseType Base);
+  static int CountDigits(unsigned long long Value, BaseType Base);
+  std::size_t getValueSize(FmtValue Value) const;
+
+  /// Formats an abstract value with the current parse state.
+  bool formatValue(FmtValue Value) const;
+
+  bool write(FmtValue Value) const;
+  bool write(unsigned long long Value) const;
+  bool write(long long Value) const;
+  bool write(const void* Ptr) const;
+  bool write(char C) const;
+  bool write(FmtValue::StrAndLen FatStr) const;
+  bool write(const AnyFmt& Generic) const;
+
 protected:
   void setReplacementSubstr(std::size_t Len = StrView::npos);
   void setReplacementSubstr(std::size_t Pos, std::size_t Len);
   StrView collectBraces() const;
+
 private:
   StrView FormatString;
   FmtReplacement ParsedReplacement;
@@ -917,10 +960,16 @@ namespace H {
     (0 + ... + estimate_buf_v<TT>);
 } // namespace H
 
+#if 0
 template <std::size_t N, typename...TT>
 using SmallBufEstimateType = 
   SmallBuf<N - (sizeof...(TT) * 2 + 1) 
     + H::estimate_bufs<TT...>>;
+#else
+template <std::size_t N, typename...TT>
+using SmallBufEstimateType = 
+  SmallBuf<(N > 64) ? 256 : 64>;
+#endif
 
 } // namespace sfmt
 

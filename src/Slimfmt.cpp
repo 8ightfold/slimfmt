@@ -16,11 +16,51 @@
 //
 //===----------------------------------------------------------------===//
 
+#undef  SLIMFMT_CXPR_CHECKS
 #define SLIMFMT_CXPR_CHECKS 0
 #include "Slimfmt.hpp"
+
 #include <cassert>
+#include <cmath>
 #include <charconv>
 #include <ostream>
+#include <tuple>
+
+#ifdef _MSC_VER
+# include <intrin.h>
+#endif
+
+#ifndef _MSC_VER
+# if SLIMFMT_HAS_BUILTIN(__builtin_clzll)
+#  define SLIMFMT_CLZLL(x) __builtin_clzll(x)
+# endif
+#else // _MSC_VER
+
+# ifndef __clang__
+#  pragma intrinsic(_BitScanForward)
+#  pragma intrinsic(_BitScanReverse)
+#  ifdef _WIN64
+#   pragma intrinsic(_BitScanForward64)
+#   pragma intrinsic(_BitScanReverse64)
+#  endif // _Win64
+# endif // __clang__
+
+static inline int msc_clzll(std::uint64_t V) {
+  unsigned long Out = 0;
+#ifdef _WIN64
+  _BitScanForward64(&Out, V);
+#else // _WIN64
+  if (_BitScanForward(&Out, std::uint32_t(V >> 32)))
+    return 63 ^ int(Out + 32);
+  _BitScanForward(&Out, std::uint32_t(V));
+#endif // _WIN64
+  assert(V != 0 && "Invalid clzll input!");
+  return int(Out);
+}
+
+# define SLIMFMT_CLZLL(x) ::msc_clzll(x)
+
+#endif // _MSC_VER
 
 using namespace sfmt;
 using namespace sfmt::H;
@@ -236,19 +276,40 @@ bool FmtValue::isCharType(bool Permissive) const noexcept {
   return this->isStrType(false);
 }
 
-unsigned long long FmtValue::getInt(bool Permissive) const {
+long long FmtValue::getInt(bool Permissive) const {
+  using IIntType = long long;
   if SLIMFMT_UNLIKELY(!this->isIntType(Permissive))
     return 0;
   switch (this->Type) {
     case SignedType:      return Value.Signed;
-    case UnsignedType:    return Value.Unsigned;
     case SignedLLType:    return Value.SignedLL;
-    case UnsignedLLType:  return Value.UnsignedLL;
+    case UnsignedType:    return IIntType(Value.Unsigned);
+    case UnsignedLLType:  return IIntType(Value.UnsignedLL);
     case CharType: {
       assert(Permissive && "Error! "
         "This should never be false, "
         "please report it as a bug.");
-      return unsigned(Value.Char);
+      return IIntType(Value.Char);
+    }
+    default:
+      SLIMFMT_UNREACHABLE;
+  }
+}
+
+unsigned long long FmtValue::getUInt(bool Permissive) const {
+  using IIntType = unsigned long long;
+  if SLIMFMT_UNLIKELY(!this->isIntType(Permissive))
+    return 0;
+  switch (this->Type) {
+    case UnsignedType:    return Value.Unsigned;
+    case UnsignedLLType:  return Value.UnsignedLL;
+    case SignedType:      return IIntType(Value.Signed);
+    case SignedLLType:    return IIntType(Value.SignedLL);
+    case CharType: {
+      assert(Permissive && "Error! "
+        "This should never be false, "
+        "please report it as a bug.");
+      return IIntType(Value.Char);
     }
     default:
       SLIMFMT_UNREACHABLE;
@@ -266,19 +327,19 @@ char FmtValue::getChar(bool Permissive) const {
   switch (this->Type) {
     case CStringType: {
       const char* Str = Value.CString;
-      return SLIMFMT_LIKELY(Str) ? *Str : '\0';
+      return SLIMFMT_LIKELY(Str) ? *Str : ' ';
     }
     case StdStringType: {
       const std::string* Str = Value.StdString;
       assert(Str && "A bug occured. Please report this.");
       return SLIMFMT_LIKELY(!Str->empty())
-        ? *Str->data() : '\0';
+        ? *Str->data() : ' ';
     }
     case StringViewType: {
       const std::string_view* Str = Value.StringView;
       assert(Str && "A bug occured. Please report this.");
       return SLIMFMT_LIKELY(!Str->empty())
-        ? *Str->data() : '\0';
+        ? *Str->data() : ' ';
     }
     default:
       SLIMFMT_UNREACHABLE;
@@ -315,6 +376,23 @@ FmtValue::StrAndLen FmtValue::getStr(bool Permissive) const {
   }
 }
 
+const void* FmtValue::getPtr(bool Permissive) const {
+  if SLIMFMT_UNLIKELY(!this->isPtrType(Permissive))
+    return nullptr;
+  if SLIMFMT_LIKELY(this->Type == PtrType)
+    return Value.Ptr;
+  assert(Permissive && "Error! "
+    "This should never be false, "
+    "please report it as a bug.");
+  return Value.CString;
+}
+
+const AnyFmt* FmtValue::getGeneric() const {
+  if SLIMFMT_UNLIKELY(!this->isGenericType())
+    return nullptr;
+  return Value.Generic;
+}
+
 const char* FmtValue::getTypeName() const {
   switch (this->Type) {
    case CharType:       return "Char";
@@ -330,101 +408,310 @@ const char* FmtValue::getTypeName() const {
   }
 }
 
-//=== Actual Formatting ===//
-
-namespace {
-  enum : bool {
-    Valid   = false,
-    Invalid = true,
-  };
-} // namespace `anonymous`
-
-static bool formatToStr(
- const Formatter& Fmt, const char* Str, std::size_t Len) {
-  auto& Spec = Fmt.getLastReplacement();
-  if (Len >= Spec.Align) {
-    Fmt->append(Str, Str + Len);
-    return Valid;
-  }
-
-  Fmt->reserveBack(Spec.Align);
-  const std::size_t FillTotal = (Spec.Align - Len);
-
-  if SLIMFMT_LIKELY(Spec.Side == AlignType::Left) {
-    Fmt->append(Str, Str + Len);
-    Fmt->fill(FillTotal, Spec.Pad);
-    return Valid;
-  } else if (Spec.Side == AlignType::Center) {
-    const std::size_t FillHalf = FillTotal / 2;
-    Fmt->fill(FillHalf, Spec.Pad);
-    Fmt->append(Str, Str + Len);
-    Fmt->fill(FillHalf, Spec.Pad);
-    // Check if total is odd. If it is, append
-    // a padding character.
-    if (FillTotal % 2)
-      Fmt->pushBack(Spec.Pad);
-    return Valid;
-  } else {
-    Fmt->fill(FillTotal, Spec.Pad);
-    Fmt->append(Str, Str + Len);
-    return Valid;
-  }
-
-  return Invalid;
-}
-
-bool FmtValue::formatTo(const Formatter& Fmt) const {
-  const bool Perm = Fmt.isPermissive();
-  assert(Fmt.getLastReplacement().isFormat() && "Formatter in invalid state!");
-
-  // String has priority over Char. This means 
-  // the latter will never get hit in permissive mode.
-  if (this->isStrType(Perm)) {
-    auto [Str, Len] = this->getStr(Perm);
-    return formatToStr(Fmt, Str, Len);
-  } else if (this->isCharType()) {
-    char C = this->getChar();
-  }
-
-  return Invalid;
-}
-
 //======================================================================//
 // Formatter
 //======================================================================//
 
-namespace {
-  struct FmtValueSpan {
-    explicit FmtValueSpan(FmtValue::List Values) :
-     Begin(Values.begin()), End(Values.end()) {}
-  public:
-    const FmtValue* take() {
-      if SLIMFMT_UNLIKELY(this->isEmpty())
-        return nullptr;
-      return this->Begin++;
-    }
-    std::pair<const FmtValue*, const FmtValue*> takePair() {
-      const auto First = this->take();
-      return {First, this->take()};
-    }
-    bool canTake() const {
-      return !this->isEmpty();
-    }
-    bool canTakePair() const {
-      return this->size() > 1;
-    }
-    std::size_t size() const {
-      return End - Begin;
-    }
-    bool isEmpty() const {
-      return Begin == End;
-    }
+template <std::size_t Base>
+static inline int countDigitsFallback(std::uint64_t V) {
+  static constexpr std::size_t Base2 = Base * Base;
+  static constexpr std::size_t Base3 = Base * Base2;
+  static constexpr std::size_t Base4 = Base * Base3;
+  int Total = 1;
+  while (true) {
+    if (V < Base)  return Total;
+    if (V < Base2) return Total + 1;
+    if (V < Base3) return Total + 2;
+    if (V < Base4) return Total + 3;
+    V /= Base4;
+    Total += 4;
+  }
+  SLIMFMT_UNREACHABLE;
+}
+
+template <std::size_t Base = 10>
+static inline int countDigits(std::uint64_t Value) {
+  return countDigitsFallback<Base>(Value);
+}
+
+template <>
+inline int countDigits<2>(std::uint64_t Value) {
+#ifdef SLIMFMT_CLZLL
+  // Mask so Value is always >1.
+  return SLIMFMT_CLZLL(Value | 1);
+#else
+  return countDigitsFallback<2>(Value);
+#endif
+}
+
+template <>
+inline int countDigits<10>(std::uint64_t Value) {
+#ifdef SLIMFMT_CLZLL
+  // TODO: Add clzll speedup
+#endif
+  return countDigitsFallback<10>(Value);
+}
+
+template <std::size_t Base = 10>
+static inline int countDigits(const std::int64_t Value) {
+  const auto UValue = std::uint64_t(std::llabs(Value));
+  return countDigits<Base>(UValue) + (Value < 0);
+}
+
+template <typename T>
+static inline int countDigitsDispatch(T Value, BaseType Base) {
+  switch (Base) {
+   case BaseType::Bin:
+    return countDigits<2>(Value);
+   case BaseType::Oct:
+    return countDigits<8>(Value);
+   case BaseType::Dec:
+    return countDigits<10>(Value);
+   case BaseType::Hex:
+    return countDigits<16>(Value);
+   default: {
+    assert(false && "Invalid base!");
+    return 0;
+   }
+  }
+}
+
+int Formatter::CountDigits(long long Value, BaseType Base) {
+  return countDigitsDispatch(std::int64_t(Value), Base);
+}
+
+int Formatter::CountDigits(unsigned long long Value, BaseType Base) {
+  return countDigitsDispatch(std::uint64_t(Value), Base);
+}
+
+std::size_t Formatter::getValueSize(FmtValue Value) const {
+  if SLIMFMT_UNLIKELY(Value.isGenericType()) {
+    assert(false && "Cannot get the size of generic types!");
+    return 0U;
+  }
+
+  // Get the current spec.
+  auto& Spec = ParsedReplacement;
+  if (Value.isSIntType()) {
+    return CountDigits(Value.getInt(), Spec.Base);
+  } else if (Value.isUIntType()) {
+    return CountDigits(Value.getUInt(), Spec.Base);
+  } else if (Value.isPtrType(Spec.Extra == ExtraType::Ptr)) {
+    const void* Ptr = Value.getPtr(true);
+    const auto IPtr = reinterpret_cast<std::uintptr_t>(Ptr);
+    // Add 2 to account for the leading 0[base].
+    return countDigitsDispatch(std::uint64_t(IPtr), Spec.Base) + 2;
+  } else if (Value.isCharType()) {
+    return 1U;
+  } else if (Value.isStrType()) {
+    if (Spec.Extra == ExtraType::Char)
+      return 1U;
+    auto [_, Len] = Value.getStr();
+    return Len;
+  }
+
+  assert(false && "Invalid value type!");
+  SLIMFMT_UNREACHABLE;
+}
+
+bool Formatter::formatValue(FmtValue Value) const {
+  assert(ParsedReplacement.isFormat() && "Invalid formatter state!");
+  // Pass off generics early, as their size cannot be determined.
+  if (auto* Generic = Value.getGeneric())
+    return this->write(*Generic);
   
-  private:
-    const FmtValue* Begin;
-    const FmtValue* End;
-  };
-} // namespace `anonymous`
+  // Get the size of the current value for padding.
+  const std::size_t Len = this->getValueSize(Value);
+  auto& Spec = ParsedReplacement;
+
+  if SLIMFMT_UNLIKELY(Spec.Base == BaseType::Invalid) {
+    assert(false && "Invalid base type!");
+    const auto FillAmount = std::max(Len, Spec.Align);
+    Buf.fill(FillAmount, Spec.Pad);
+    return false;
+  }
+
+  // Check if the alignment is actually larger than the variable length.
+  // If it isn't, just write without checking the alignment type.
+  if (Spec.Align < Len) {
+    Buf.reserveBack(Len);
+    return this->write(Value);
+  }
+  
+  // Handle value alignment.
+  Buf.reserveBack(Spec.Align);
+  const std::size_t TotalAlign = Spec.Align - Len;
+  if (Spec.Side == AlignType::Left) {
+    bool Ret = this->write(Value);
+    Buf.fill(TotalAlign, Spec.Pad);
+    return Ret;
+  } else if (Spec.Side == AlignType::Center) {
+    const std::size_t HalfAlign = TotalAlign / 2;
+    Buf.fill(HalfAlign, Spec.Pad);
+    bool Ret = this->write(Value);
+    Buf.fill((TotalAlign - HalfAlign), Spec.Pad);
+    return Ret;
+  } else /* AlignType::Right */ {
+    Buf.fill(TotalAlign, Spec.Pad);
+    return this->write(Value);
+  }
+
+  SLIMFMT_UNREACHABLE;
+}
+
+//=== Writers ===//
+
+bool Formatter::write(FmtValue Value) const {
+  auto& Spec = ParsedReplacement;
+  /// Check if we should allow
+  const bool CharPerm = (Spec.Extra == ExtraType::Char);
+  const bool PtrPerm  = (Spec.Extra == ExtraType::Ptr);
+  
+  // We probably already handled this, but check just in case.
+  if (auto* Generic = Value.getGeneric())
+    return this->write(*Generic);
+  else if (Value.isSIntType())
+    return this->write(Value.getInt());
+  else if (Value.isUIntType())
+    return this->write(Value.getUInt());
+  else if (Value.isPtrType(PtrPerm))
+    return this->write(Value.getPtr(PtrPerm));
+  else if (Value.isCharType(CharPerm))
+    return this->write(Value.getChar(CharPerm));
+  else if (Value.isStrType())
+    return this->write(Value.getStr());
+  
+  assert(false && "Invalid value type!");
+  SLIMFMT_UNREACHABLE;
+}
+
+// Converts value in the range [0, 100) to a string.
+static constexpr const char* digitsDec2(std::size_t Value) {
+  return 
+    &"0001020304050607080910111213141516171819"
+     "2021222324252627282930313233343536373839"
+     "4041424344454647484950515253545556575859"
+     "6061626364656667686970717273747576777879"
+     "8081828384858687888990919293949596979899"[Value * 2];
+}
+
+// This function is the unified medium to write int-like types out.
+template <std::size_t Base>
+static inline bool formatUInt(SmallBufBase& Buf, std::uint64_t V, bool Upper = false) {
+  static_assert(Base <= 16, "Base out of range!");
+  static constexpr bool IsPow2 = false && ((Base & (Base - 1)) == 0);
+  static constexpr std::size_t Base2 = (Base * Base);
+
+  // Make a buffer that fits the digits.
+  static constexpr std::size_t BufLen = (8 * 16 * 2) / Base;
+  char LocalBuf[BufLen + 1] {};
+  char* End = (LocalBuf + BufLen);
+  char* Out = End;
+
+  if constexpr (IsPow2) {
+    do {
+      const char* Digits = Upper 
+        ? "0123456789ABCDEF"
+        : "0123456789abcdef";
+      // Mask off the lower bits of the value.
+      auto Digit = unsigned(V & ((1 << Base) - 1));
+      *(--Out) = Digits[Digit];
+    } while((V >>= Base) != 0U);
+  } else if constexpr (Base == 10) {
+    // Hardcoded this for now. Original implementation
+    // can be found in fmtlib.
+    while (V >= 100) {
+      Out -= 2;
+      const auto Str = digitsDec2(V % 100);
+      Out[0] = Str[0];
+      Out[1] = Str[1];
+      V /= 100;
+    }
+    if (V < 10) {
+      *(--Out) = char('0' + V);
+      Buf.append(Out, End);
+      return true;
+    }
+    Out -= 2;
+    const auto Str = digitsDec2(V % 100);
+    Out[0] = Str[0];
+    Out[1] = Str[1];
+  } else /* Not 2^N */ {
+    while (V != 0) {
+      const char* Digits = Upper 
+        ? "0123456789ABCDEF"
+        : "0123456789abcdef";
+      auto Digit = unsigned(V % Base);
+      *(--Out) = Digits[Digit];
+      V /= Base;
+    }
+  }
+
+  Buf.append(Out, End);
+  return true;
+}
+
+bool Formatter::write(unsigned long long Value) const {
+  if (Value == 0) {
+    Buf.pushBack('0');
+    return true;
+  }
+  auto& Spec = ParsedReplacement;
+  const bool UseUpper = 
+    (Spec.Extra == ExtraType::Uppercase) ||
+    (Spec.Extra == ExtraType::Ptr);
+  switch (Spec.Base) {
+   case BaseType::Bin:
+    return formatUInt<2>(Buf, Value);
+   case BaseType::Oct:
+    return formatUInt<8>(Buf, Value);
+   case BaseType::Dec:
+    return formatUInt<10>(Buf, Value);
+   case BaseType::Hex:
+    return formatUInt<16>(Buf, Value, UseUpper);
+   default: {
+    assert(false && "Invalid base.");
+    return false;
+   }
+  }
+  return true;
+}
+
+bool Formatter::write(long long Value) const {
+  if (Value < 0)
+    Buf.pushBack('-');
+  const std::uint64_t UValue = std::llabs(Value);
+  return this->write(UValue);
+}
+
+bool Formatter::write(const void* Ptr) const {
+  const auto Base = ParsedReplacement.Base;
+  Buf.pushBack('0');
+  Buf.pushBack("bodx"[int(Base)]);
+  return this->write(
+    reinterpret_cast<std::uintptr_t>(Ptr));
+}
+
+bool Formatter::write(char C) const {
+  Buf.pushBack(C);
+  return true;
+}
+
+bool Formatter::write(FmtValue::StrAndLen FatStr) const {
+  const auto [Str, Len] = FatStr;
+  if SLIMFMT_UNLIKELY(!Str)
+    return false;
+  // TODO: Check for ExtraType::Char here?
+  Buf.append(Str, Str + Len);
+  return true;
+}
+
+bool Formatter::write(const AnyFmt& Generic) const {
+  Generic.doFormat(*this);
+  return true;
+}
+
+//=== Spec Parsing ===//
 
 void Formatter::setReplacementSubstr(std::size_t Len) {
   if (Len == StrView::npos)
@@ -444,8 +731,6 @@ StrView Formatter::collectBraces() const {
     return StrView();
   return FormatString.substr(0, BraceEnd);
 }
-
-//=== Parsing ===//
 
 static AlignType parseRSpecSide(StrView& Spec) {
   if SLIMFMT_UNLIKELY(Spec.empty())
@@ -499,16 +784,86 @@ static std::size_t parseRSpecAlign(StrView& Spec) {
   return Output;
 }
 
+static std::pair<BaseType, ExtraType> parseRSpecOptions(StrView S) {
+  if (S.empty())
+    return {BaseType::Default, ExtraType::Default};
+  
+  // Valid spec options can currently only be 2 characters long.
+  assert(S.size() < 3 && "Spec options too long!");
+  BaseType Base = BaseType::Default;
+  ExtraType Extra = ExtraType::Default;
+
+  // Recurse to find the back, then continue.
+  if (S.size() == 2) {
+    // We start from the back to support things like %op.
+    // Starting from the front would require more checks.
+    std::tie(Base, Extra) = 
+      parseRSpecOptions({&S.back(), 1});
+    S.remove_suffix(1);
+  }
+
+  // Determine the Option type.
+  switch (S[0]) {
+   // Bases:
+   case 'B':
+   case 'b': {
+    Base = BaseType::Bin;
+    break;
+   }
+   case 'O':
+   case 'o': {
+    Base = BaseType::Oct;
+    break;
+   }
+   case 'D':
+   case 'd': {
+    Base = BaseType::Dec;
+    break;
+   }
+   case 'H':
+   case 'X':
+    Extra = ExtraType::Uppercase;
+   case 'x':
+   case 'h': {
+    Base = BaseType::Hex;
+    break;
+   }
+
+   // Extra:
+   case 'P':
+   case 'p': {
+    assert(Extra == ExtraType::None && 
+      "Type specifier will be overwritten!");
+    Base = BaseType::Hex;
+    // Pointers always print lowercase.
+    Extra = ExtraType::Ptr;
+    break;
+   }
+   case 'C':
+   case 'c': {
+    assert(Extra == ExtraType::None && 
+      "Type specifier will be overwritten!");
+    Extra = ExtraType::Char;
+    break;
+   }
+   default:
+    assert(false && "Invalid spec option!");
+  }
+
+  return {Base, Extra};
+}
+
 bool Formatter::parseReplacementSpec(StrView Spec) {
   char Pad = ' ';
   AlignType Side = AlignType::Default;
   std::size_t Align = 0;
-  StrView Options = "";
+  BaseType  Base  = BaseType::Default;
+  ExtraType Extra = ExtraType::Default;
   StrView Data = Spec;
   /// Use this to exit early without duplication.
   auto Finish = [&, this]() -> bool {
     this->ParsedReplacement = 
-      FmtReplacement(Data, Options, Side, Align, Pad);
+      FmtReplacement(Data, Base, Extra, Side, Align, Pad);
     return true;
   };
 
@@ -522,7 +877,10 @@ bool Formatter::parseReplacementSpec(StrView Spec) {
       return false;
     }
     Pad = Spec[1];
-    assert(Pad >= ' ' && "Invalid padding type!");
+    if SLIMFMT_UNLIKELY(Pad < ' ' || Pad > 0x7F) {
+      assert(false && "Invalid padding type!");
+      Pad = ' ';
+    }
     Spec.remove_prefix(2);
     Side  = parseRSpecSide(Spec);
     Align = parseRSpecAlign(Spec);
@@ -538,7 +896,7 @@ bool Formatter::parseReplacementSpec(StrView Spec) {
     return false;
   }
 
-  Options = Spec.substr(1);
+  std::tie(Base, Extra) = parseRSpecOptions(Spec.substr(1));
   return Finish();
 }
 
@@ -589,6 +947,41 @@ bool Formatter::parseNextReplacement() {
   return parseReplacementSpec(Spec);
 }
 
+//=== Core ===//
+
+namespace {
+  struct FmtValueSpan {
+    explicit FmtValueSpan(FmtValue::List Values) :
+     Begin(Values.begin()), End(Values.end()) {}
+  public:
+    const FmtValue* take() {
+      if SLIMFMT_UNLIKELY(this->isEmpty())
+        return nullptr;
+      return this->Begin++;
+    }
+    std::pair<const FmtValue*, const FmtValue*> takePair() {
+      const auto First = this->take();
+      return {First, this->take()};
+    }
+    bool canTake() const {
+      return !this->isEmpty();
+    }
+    bool canTakePair() const {
+      return this->size() > 1;
+    }
+    std::size_t size() const {
+      return End - Begin;
+    }
+    bool isEmpty() const {
+      return Begin == End;
+    }
+  
+  private:
+    const FmtValue* Begin;
+    const FmtValue* End;
+  };
+} // namespace `anonymous`
+
 void Formatter::parseWith(FmtValue::List Values) {
   FmtValueSpan Vs {Values};
   while (this->parseNextReplacement()) {
@@ -616,7 +1009,7 @@ void Formatter::parseWith(FmtValue::List Values) {
       return;
     }
     const FmtValue* Value = Vs.take();
-    if (Value->formatTo(*this))
+    if (!this->formatValue(*Value))
       // An error occurred. Stop parsing.
       return;
   }

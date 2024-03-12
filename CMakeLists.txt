@@ -3,11 +3,12 @@ include_guard(DIRECTORY)
 
 project(
   slimfmt
-  VERSION 0.0.2
+  VERSION 0.0.4
   LANGUAGES CXX
 )
 
 option(SLIMFMT_TESTING "Enable tests." OFF)
+option(SLIMFMT_FORMAT_CHECKS "Enable compile time format checks." OFF)
 
 add_library(slimfmt STATIC src/Slimfmt.cpp)
 add_library(slimfmt::slimfmt ALIAS slimfmt)
