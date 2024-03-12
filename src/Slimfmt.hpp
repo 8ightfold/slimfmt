@@ -973,7 +973,7 @@ using SmallBufEstimateType =
 
 template <std::size_t N, typename...TT>
 std::string format(const char(&Str)[N], TT&&...Args) {
-  SmallBufEstimateType<N, TT...> Buf;
+  SmallBufEstimateType<N> Buf;
   Formatter Fmt {Buf, {Str, N}};
   Fmt.parseWith({FmtValue{Args}...});
   return std::string(Buf.begin(), Buf.end());
@@ -981,7 +981,7 @@ std::string format(const char(&Str)[N], TT&&...Args) {
 
 template <std::size_t N, typename...TT>
 void print(std::FILE* File, const char(&Str)[N], TT&&...Args) {
-  SmallBufEstimateType<N, TT...> Buf;
+  SmallBufEstimateType<N> Buf;
   Formatter Fmt {Buf, {Str, N}};
   Fmt.parseWith({FmtValue{Args}...});
   Buf.writeTo(File);
@@ -989,7 +989,7 @@ void print(std::FILE* File, const char(&Str)[N], TT&&...Args) {
 
 template <std::size_t N, typename...TT>
 void print(std::ostream& Stream, const char(&Str)[N], TT&&...Args) {
-  SmallBufEstimateType<N, TT...> Buf;
+  SmallBufEstimateType<N> Buf;
   Formatter Fmt {Buf, {Str, N}};
   Fmt.parseWith({FmtValue{Args}...});
   Buf.writeTo(Stream);
@@ -1002,7 +1002,7 @@ void print(const char(&Str)[N], TT&&...Args) {
 
 template <std::size_t N, typename...TT>
 void println(std::FILE* File, const char(&Str)[N], TT&&...Args) {
-  SmallBufEstimateType<N + 1, TT...> Buf;
+  SmallBufEstimateType<N + 1> Buf;
   Formatter Fmt {Buf, {Str, N}};
   Fmt.parseWith({FmtValue{Args}...});
   Buf.pushBack('\n');
@@ -1011,7 +1011,7 @@ void println(std::FILE* File, const char(&Str)[N], TT&&...Args) {
 
 template <std::size_t N, typename...TT>
 void println(std::ostream& Stream, const char(&Str)[N], TT&&...Args) {
-  SmallBufEstimateType<N + 1, TT...> Buf;
+  SmallBufEstimateType<N + 1> Buf;
   Formatter Fmt {Buf, {Str, N}};
   Fmt.parseWith({FmtValue{Args}...});
   Buf.pushBack('\n');

@@ -41,7 +41,7 @@ int main() {
   CustomType  Any = {"sooo"};
   sfmt::println("Testing, testing, {}!",      "123");
   sfmt::println("Testing, testing, {: +10}!", 123);
-  sfmt::println("Testing, testing, {: =*}!",  10, "123");
+  sfmt::println("Testing, testing, {: =*%D}!",  10, "123");
   sfmt::println("Testing, testing, {: -10}!", 123);
   sfmt::println("{%b}, {}, {} {}!!", 42, "it's great", Any, Str);
   sfmt::println("{}, {%o}, {} {}!!", "it's great", 42, Str, Any);
