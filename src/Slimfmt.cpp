@@ -16,10 +16,7 @@
 //
 //===----------------------------------------------------------------===//
 
-#undef  SLIMFMT_CXPR_CHECKS
-#define SLIMFMT_CXPR_CHECKS 0
 #include "Slimfmt.hpp"
-
 #include <cassert>
 #include <cmath>
 #include <charconv>

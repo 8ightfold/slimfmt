@@ -31,14 +31,8 @@
 #include <type_traits>
 #include <utility>
 
-#ifndef SLIMFMT_HEADER_ONLY
-# define SLIMFMT_HEADER_ONLY 1
-#elif (SLIMFMT_HEADER_ONLY != 1)
-# error Slimfmt has already been used as non header only.
-#endif
-
 #ifndef SLIMFMT_CXPR_CHECKS
-# define SLIMFMT_CXPR_CHECKS 1
+# define SLIMFMT_CXPR_CHECKS 0
 #endif
 
 #ifdef __has_cpp_attribute
