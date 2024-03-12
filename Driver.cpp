@@ -39,17 +39,17 @@ void testBuf() {
 }
 
 static inline void runOneTest(std::string& Str, CustomType& Any) {
-  // sfmt::println("Testing, testing, {}!",      "123");
-  // sfmt::println("Testing, testing, {: +10}!", 123);
-  // sfmt::println("Testing, testing, {: =*%D}!", 10, "123");
-  // sfmt::println("Testing, testing, {: -10}!", 123);
-  // sfmt::println("Testing, testing, {%c}!", "ABC");
-  // sfmt::println("{%b}, {}, {} {}!!", 42, "it's great", Any, Str);
-  // sfmt::println("{}, {%o}, {} {}!!", "it's great", 42, Str, Any);
-  // sfmt::println("{}, {}, {%d} {}!!", Any, "it's great", 42, Str);
-  // sfmt::println("{}, {}, {} {%X}!!", Str, Any, "it's great", 42);
-  // sfmt::println("\n\n");
-  // sfmt::println("Testing, testing, {}!!",      "123");
+  sfmt::println("Testing, testing, {}!",      "123");
+  sfmt::println("Testing, testing, {: +10}!", 123);
+  sfmt::println("Testing, testing, {: =*%D}!", 10, "123");
+  sfmt::println("Testing, testing, {: -10}!", 123);
+  sfmt::println("Testing, testing, {%c}!", "ABC");
+  sfmt::println("{%b}, {}, {} {}!!", 42, "it's great", Any, Str);
+  sfmt::println("{}, {%o}, {} {}!!", "it's great", 42, Str, Any);
+  sfmt::println("{}, {}, {%d} {}!!", Any, "it's great", 42, Str);
+  sfmt::println("{}, {}, {} {%X}!!", Str, Any, "it's great", 42);
+  sfmt::println("\n\n");
+  sfmt::println("Testing, testing, {}!!",      "123");
   sfmt::println("Testing, testing, {: +10%x}!!", -123);
   sfmt::println("Testing, testing, {: =*}!!", 10, "-7b");
   sfmt::println("Testing, testing, {: -10%x}!!", -123);

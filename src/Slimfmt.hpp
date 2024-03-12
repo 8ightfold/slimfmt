@@ -877,10 +877,6 @@ private:
 
 } // namespace sfmt
 
-//======================================================================//
-// API
-//======================================================================//
-
 namespace sfmt {
 
 template <std::size_t N>
@@ -888,62 +884,74 @@ using SmallBufEstimateType =
   SmallBuf<(N > 64) ? 256 : 128>;
 
 template <std::size_t N, typename...TT>
-void nulls(const char(&Str)[N], TT&&...Args) {
-  SmallBufEstimateType<N> Buf;
-  Formatter Fmt {Buf, {Str, N}};
+void printerCommon(StrView Str, SmallBuf<N>& Buf, const TT&...Args) {
+  Formatter Fmt {Buf, Str};
   Fmt.parseWith({FmtValue{Args}...});
 }
 
 template <std::size_t N, typename...TT>
+void printerlnCommon(StrView Str, SmallBuf<N>& Buf, const TT&...Args) {
+  printerCommon(Str, Buf, Args...);
+  Buf.pushBack('\n');
+}
+
+//======================================================================//
+// API
+//======================================================================//
+
+template <std::size_t N, typename...TT>
 std::string format(const char(&Str)[N], TT&&...Args) {
   SmallBufEstimateType<N> Buf;
-  Formatter Fmt {Buf, {Str, N}};
-  Fmt.parseWith({FmtValue{Args}...});
+  printerCommon({Str, N}, Buf, Args...);
   return std::string(Buf.begin(), Buf.end());
+}
+
+template <std::size_t N, typename...TT>
+void nulls(const char(&Str)[N], TT&&...Args) {
+  SmallBufEstimateType<N> Buf;
+  printerCommon({Str, N}, Buf, Args...);
 }
 
 template <std::size_t N, typename...TT>
 void print(std::FILE* File, const char(&Str)[N], TT&&...Args) {
   SmallBufEstimateType<N> Buf;
-  Formatter Fmt {Buf, {Str, N}};
-  Fmt.parseWith({FmtValue{Args}...});
+  printerCommon({Str, N}, Buf, Args...);
   Buf.writeTo(File);
 }
 
 template <std::size_t N, typename...TT>
 void print(std::ostream& Stream, const char(&Str)[N], TT&&...Args) {
   SmallBufEstimateType<N> Buf;
-  Formatter Fmt {Buf, {Str, N}};
-  Fmt.parseWith({FmtValue{Args}...});
+  printerCommon({Str, N}, Buf, Args...);
   Buf.writeTo(Stream);
 }
 
 template <std::size_t N, typename...TT>
 void print(const char(&Str)[N], TT&&...Args) {
-  print(stdout, Str, std::forward<TT>(Args)...);
+  SmallBufEstimateType<N> Buf;
+  printerCommon({Str, N}, Buf, Args...);
+  Buf.writeTo(stdout);
 }
 
 template <std::size_t N, typename...TT>
 void println(std::FILE* File, const char(&Str)[N], TT&&...Args) {
   SmallBufEstimateType<N + 1> Buf;
-  Formatter Fmt {Buf, {Str, N}};
-  Fmt.parseWith({FmtValue{Args}...});
-  Buf.pushBack('\n');
+  printerlnCommon({Str, N}, Buf, Args...);
   Buf.writeTo(File);
 }
 
 template <std::size_t N, typename...TT>
 void println(std::ostream& Stream, const char(&Str)[N], TT&&...Args) {
   SmallBufEstimateType<N + 1> Buf;
-  Formatter Fmt {Buf, {Str, N}};
-  Fmt.parseWith({FmtValue{Args}...});
-  Buf.pushBack('\n');
+  printerlnCommon({Str, N}, Buf, Args...);
   Buf.writeTo(Stream);
 }
 
 template <std::size_t N, typename...TT>
 void println(const char(&Str)[N], TT&&...Args) {
-  println(stdout, Str, std::forward<TT>(Args)...);
+  SmallBufEstimateType<N> Buf;
+  printerlnCommon({Str, N}, Buf, Args...);
+  Buf.writeTo(stdout);
 }
 
 /// @brief Enables or disables colored output.

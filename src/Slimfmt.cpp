@@ -474,9 +474,6 @@ namespace HH {
   template <>
   struct TestType<false> {};
 
-  template <typename T>
-  using MetaVoidT = std::void_t<typename TestType<T::value>::type>;
-
   template <bool B>
   using MetaVoidV = std::void_t<typename TestType<B>::type>;
 
@@ -712,6 +709,9 @@ public:
 
 } // namespace `anonymous`
 
+
+//============================[ Test Code ]=============================//
+
 struct RadixInt {
   std::uint64_t Val;
   std::size_t Radix;
@@ -768,6 +768,8 @@ void testRadix(std::uint64_t Val, std::size_t Radix) {
   }
   std::fflush(stdout);
 }
+
+//===============================================================//
 
 template <typename T>
 static inline int countDigitsDispatch(T Value, BaseType Base) {
@@ -1038,6 +1040,7 @@ static std::size_t parseRSpecAlign(StrView& Spec) {
   return Output;
 }
 
+// TODO: Handle arbitrary radix formatting, %r[VALUE]
 static std::pair<BaseType, ExtraType> parseRSpecOptions(StrView S) {
   if (S.empty())
     return {BaseType::Default, ExtraType::Default};
