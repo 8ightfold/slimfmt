@@ -954,22 +954,6 @@ bool Formatter::write(unsigned long long Value) const {
    (IntFormat<BaseV> Fmt, std::uint64_t Value) {
     return Fmt.Write(this->Buf, Value, UseUpper);
   });
-
-  switch (Spec.Base) {
-   case 2:
-    return IntFormat<2>::Write(Buf, Value);
-   case 8:
-    return IntFormat<8>::Write(Buf, Value);
-   case 10:
-    return IntFormat<10>::Write(Buf, Value);
-   case 16:
-    return IntFormat<16>::Write(Buf, Value, UseUpper);
-   default: {
-    dbgassert(false && "Invalid base.");
-    return false;
-   }
-  }
-  return true;
 }
 
 bool Formatter::write(long long Value) const {
@@ -982,7 +966,8 @@ bool Formatter::write(long long Value) const {
 bool Formatter::write(const void* Ptr) const {
   const auto Base = ParsedReplacement.Base;
   Buf.pushBack('0');
-  Buf.pushBack("bodx"[int(Base)]);
+  Buf.pushBack('z');
+  // Buf.pushBack("bodx"[int(Base)]);
   const auto IPtr = reinterpret_cast<std::uintptr_t>(Ptr);
   return this->write((unsigned long long)IPtr);
 }
