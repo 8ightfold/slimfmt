@@ -1013,6 +1013,22 @@ bool Formatter::write(const SmallBufBase& InBuf) const {
 
 //=== Spec Parsing ===//
 
+std::size_t doFromChars(const char* Data, std::size_t DigitCount) {
+  const char* End = Data + DigitCount;
+  std::size_t Output;
+  auto [Ptr, EC] = std::from_chars(Data, End, Output);
+
+  // Check the error code.
+  if SLIMFMT_UNLIKELY(EC != std::errc{}) {
+    auto Err = std::make_error_code(EC).message();
+    std::fprintf(stderr, "\"%s\" at %c.\n", Err.c_str(), *Ptr);
+    dbgassert(false && "Invalid width specifier!");
+    return 0;
+  }
+
+  return Output;
+}
+
 void Formatter::setReplacementSubstr(std::size_t Len) {
   if (Len == StrView::npos)
     Len = FormatString.size();
@@ -1067,35 +1083,22 @@ static std::size_t parseRSpecAlign(StrView& Spec) {
   // If it doesn't exist, just use the whole string.
   std::size_t DigitCount = Spec.find_first_of('%');
   DigitCount = std::min(DigitCount, Spec.size());
-
-  const char* End = Spec.data() + DigitCount;
-  std::size_t Output;
-  auto [Ptr, EC] = std::from_chars(Spec.data(), End, Output);
+  const char* Data = Spec.data();
   Spec.remove_prefix(DigitCount);
-
-  // Check the error code.
-  if SLIMFMT_UNLIKELY(EC != std::errc{}) {
-    auto Err = std::make_error_code(EC).message();
-    std::fprintf(stderr, "\"%s\" at %c.\n", Err.c_str(), *Ptr);
-    dbgassert(false && "Invalid width specifier!");
-    return 0;
-  }
-
-  return Output;
+  return doFromChars(Data, DigitCount);
 }
 
 // TODO: Handle arbitrary radix formatting, %r[VALUE]
-static std::pair<BaseType, ExtraType> parseRSpecOptions(StrView S) {
+static std::pair<BaseSink, ExtraType> 
+ parseRSpecOptions(StrView S) {
   if (S.empty())
     return {BaseType::Default, ExtraType::Default};
-  
-  // Valid spec options can currently only be 2 characters long.
-  dbgassert(S.size() < 3 && "Spec options too long!");
-  BaseType Base = BaseType::Default;
+
+  BaseSink Base = BaseType::Default;
   ExtraType Extra = ExtraType::Default;
 
   // Recurse to find the back, then continue.
-  if (S.size() == 2) {
+  if (S.size() > 1 && std::isalpha(S.back())) {
     // We start from the back to support things like %op.
     // Starting from the front would require more checks.
     std::tie(Base, Extra) = 
@@ -1105,6 +1108,16 @@ static std::pair<BaseType, ExtraType> parseRSpecOptions(StrView S) {
 
   // Determine the Option type.
   switch (S[0]) {
+    // Arbitrary Radix:
+    case 'R':
+    case 'r': {
+      // Remove leading character.
+      S.remove_prefix(1);
+      Base = doFromChars(S.data(), S.size());
+      dbgassert(Base <= 32 && "Base out of range!");
+      break;
+    }
+
     // Bases:
     case 'B':
     case 'b': {
@@ -1149,6 +1162,7 @@ static std::pair<BaseType, ExtraType> parseRSpecOptions(StrView S) {
     }
     default:
       dbgassert(false && "Invalid spec option!");
+      std::fprintf(stderr, ": %c\n", S[0]);
   }
 
   return {Base, Extra};
@@ -1158,7 +1172,7 @@ bool Formatter::parseReplacementSpec(StrView Spec) {
   char Pad = ' ';
   AlignType Side = AlignType::Default;
   std::size_t Align = 0;
-  BaseType  Base  = BaseType::Default;
+  BaseSink  Base  = BaseType::Default;
   ExtraType Extra = ExtraType::Default;
   StrView Data = Spec;
   /// Use this to exit early without duplication.

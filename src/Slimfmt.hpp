@@ -841,7 +841,7 @@ public:
    Type(Literal), Data(Str) {}
   
   FmtReplacement(
-    StrView Spec, BaseType Base, ExtraType Extra,
+    StrView Spec, BaseSink Base, ExtraType Extra,
     AlignType Side, std::size_t Align, char Pad = ' ') :
    Type(Format), Data(Spec), Base(Base), Extra(Extra),
    Side(Side), Align(Align), Pad(Pad) {}

@@ -78,6 +78,9 @@ int main() {
   }
   sfmt::nulls("};\n");
 
+  sfmt::println("{%r32}, {%r25}, {%r8}, {%r5}\n",
+    789942, 59922, 98311, 588585);
+
   testRadix(789942, 32);  // o3dm
   testRadix(59922,  25);  // 3klm
   testRadix(1188,   19);  // 35a
