@@ -1095,6 +1095,7 @@ static std::pair<BaseSink, ExtraType>
   switch (S[0]) {
     // Arbitrary Radix:
     case 'R':
+      Extra = ExtraType::Uppercase;
     case 'r': {
       // Remove leading character.
       S.remove_prefix(1);
