@@ -895,8 +895,8 @@ bool Formatter::write(unsigned long long Value) const {
   }
   auto& Spec = ParsedReplacement;
   const bool UseUpper = 
-    (Spec.Extra == ExtraType::Uppercase) ||
-    (Spec.Extra == ExtraType::Ptr);
+    (Spec.Extra == ExtraType::Uppercase) &&
+    (Spec.Extra != ExtraType::Ptr);
   return baseDispatch(Value, Spec.Base, 
   [this, UseUpper] <std::size_t BaseV> 
    (IntFormat<BaseV> Fmt, std::uint64_t Value) {
