@@ -709,68 +709,6 @@ public:
 
 } // namespace `anonymous`
 
-
-//============================[ Test Code ]=============================//
-
-struct RadixInt {
-  std::uint64_t Val;
-  std::size_t Radix;
-};
-
-template <std::size_t Base>
-static bool formatCustomBridgeN(
- sfmt::SmallBuf<128>& Buf, const RadixInt& IRad) {
-  if (Base == IRad.Radix) {
-    (void) IntFormat<Base>::Write(Buf, IRad.Val);
-    const int Count = IntFormat<Base>::Count(IRad.Val);
-    if constexpr (false && HH::isPow2<Base>) {
-      Buf.appendStr(", Count: ");
-      IntFormat<10>::Write(Buf, std::uint64_t(Count));
-      Buf.appendStr("; shiftCount: ");
-      IntFormat<10>::Write(Buf, BaseTraits<Base>::shiftCount);
-    } else {
-      Buf.appendStr(", ");
-      IntFormat<10>::Write(Buf, std::uint64_t(Count));
-    }
-    return true;
-  }
-  return false;
-}
-
-template <std::size_t...NN>
-static void formatCustomBridge(
- sfmt::SmallBuf<128>& Buf, const RadixInt& IRad, 
- std::index_sequence<NN...>) {
-  static_assert(sizeof...(NN) <= 32);
-  if ((formatCustomBridgeN<NN + 1>(Buf, IRad) || ...))
-    return;
-  dbgassert(false && "Invalid Radix!");
-}
-
-void format_custom(const Formatter& Fmt, RadixInt IRad) {
-  sfmt::SmallBuf<128> Buf;
-  Buf.pushBack('{');
-  formatCustomBridge(Buf, IRad, std::make_index_sequence<32>{});
-  Buf.pushBack('}');
-  Fmt.write(Buf);
-}
-
-void testRadixA(std::uint64_t Val, std::size_t Radix) {
-  const RadixInt IRad {Val, Radix};
-  sfmt::println("{{{}, {}}: {}", Val, Radix, IRad);
-}
-
-void testRadix(std::uint64_t Val, std::size_t Radix) {
-  testRadixA(Val, Radix);
-  // if (!(Radix & (Radix - 1))) {
-  //   sfmt::print("  ");
-  //   testRadixA(Val, 2);
-  // }
-  std::fflush(stdout);
-}
-
-//===============================================================//
-
 template <typename F>
 static inline auto baseDispatch(
  std::uint64_t Value, RawBaseType Base, F&& Func) {
@@ -916,6 +854,16 @@ bool Formatter::formatValue(FmtValue Value) const {
 
 //=== Writers ===//
 
+static char getRadixChar(BaseSink Base) {
+  switch (Base) {
+    case 2:  return 'b';
+    case 8:  return 'o';
+    case 10: return 'd';
+    case 16: return 'x';
+    default: return 'n';
+  }
+}
+
 bool Formatter::write(FmtValue Value) const {
   auto& Spec = ParsedReplacement;
   /// Check if we should allow
@@ -966,8 +914,7 @@ bool Formatter::write(long long Value) const {
 bool Formatter::write(const void* Ptr) const {
   const auto Base = ParsedReplacement.Base;
   Buf.pushBack('0');
-  Buf.pushBack('z');
-  // Buf.pushBack("bodx"[int(Base)]);
+  Buf.pushBack(getRadixChar(Base));
   const auto IPtr = reinterpret_cast<std::uintptr_t>(Ptr);
   return this->write((unsigned long long)IPtr);
 }

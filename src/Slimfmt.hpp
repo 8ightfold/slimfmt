@@ -991,6 +991,4 @@ bool setColorMode(bool Value);
 
 } // namespace sfmt
 
-void testRadix(std::uint64_t Val, std::size_t Radix);
-
 #endif // SLIMFMT_HSLIMFMT_HPP

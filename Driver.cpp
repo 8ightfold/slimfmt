@@ -79,20 +79,7 @@ int main() {
   sfmt::nulls("};\n");
 
   sfmt::println("{%r32}, {%r25}, {%r8}, {%r5}\n", 789942, 59922, 98311, 588585);
-  
   sfmt::println("{%r32p}!!\n", "Yello");
-
-  testRadix(789942, 32);  // o3dm
-  testRadix(59922,  25);  // 3klm
-  testRadix(1188,   19);  // 35a
-  testRadix(57575,  16);  // e0e7
-  testRadix(123,    16);  // 7b
-  testRadix(842,    10);  // 842
-  testRadix(98311,  8);   // 300007
-  testRadix(588585, 5);   // 122313320
-  testRadix(144,    2);   // 10010000
-  testRadix(7,      1);   // 1111111
-  sfmt::println("\n\n");
 
   // constexpr std::int64_t Iters = 100000;
   constexpr std::int64_t Iters = 1;
