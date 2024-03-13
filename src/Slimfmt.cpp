@@ -699,7 +699,8 @@ public:
       Buf.pushBack('0');
       return true;
     }
-    const auto Off = std::min(64ULL, V);
+    constexpr std::uint64_t Max = 64ULL;
+    const auto Off = std::min(Max, V);
     Buf.append(UnaryString, Off);
     if (V > 64)
       Buf.append("...", 3);
