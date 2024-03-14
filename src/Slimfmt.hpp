@@ -51,27 +51,6 @@
 # define SLIMFMT_HAS_BUILTIN(x) (0)
 #endif // __has_builtin?
 
-#ifndef SLIMFMT_CONSTEVAL
-# undef SLIMFMT_HAS_CONSTEVAL
-# if __cpp_consteval >= 201811L
-#  define SLIMFMT_CONSTEVAL consteval
-#  define SLIMFMT_HAS_CONSTEVAL 1
-# else
-#  define SLIMFMT_CONSTEVAL constexpr
-#  define SLIMFMT_HAS_CONSTEVAL 0
-# endif
-#endif // SLIMFMT_CONSTEVAL
-
-#if SLIMFMT_HAS_CPP_ATTR(no_unique_address)
-# if defined(_MSC_VER) && !defined(__GNUC__)
-#  define SLIMFMT_NO_UNIQUE_ADDR [[msvc::no_unique_address]]
-# else // Not MSVC
-#  define SLIMFMT_NO_UNIQUE_ADDR [[no_unique_address]]
-#endif
-#else
-# define SLIMFMT_NO_UNIQUE_ADDR
-#endif
-
 #if SLIMFMT_HAS_BUILTIN(__builtin_expect)
 # define SLIMFMT_LIKELY(ex)   (__builtin_expect(bool(ex), true))
 # define SLIMFMT_UNLIKELY(ex) (__builtin_expect(bool(ex), false))
@@ -912,7 +891,7 @@ namespace sfmt {
 
 template <std::size_t N>
 using SmallBufEstimateType = 
-  SmallBuf<(N > 64) ? 256 : 128>;
+  SmallBuf<(N > 48) ? 128 : 64>;
 
 template <std::size_t N, typename...TT>
 void printerCommon(StrView Str, SmallBuf<N>& Buf, const TT&...Args) {
