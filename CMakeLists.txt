@@ -3,14 +3,13 @@ include_guard(DIRECTORY)
 
 project(
   slimfmt
-  VERSION 0.0.7
+  VERSION 0.0.8
   LANGUAGES CXX
 )
 
 option(SLIMFMT_TESTING "Enable tests." OFF)
 option(SLIMFMT_FORCE_ASSERT "Keep internal assertions on in release." OFF)
 option(SLIMFMT_STDERR_ASSERT "Print assertions to stderr instead of aborting." OFF)
-# option(SLIMFMT_FORMAT_CHECKS "Enable compile time format checks." OFF)
 
 message(STATUS "[slimfmt] testing: ${SLIMFMT_TESTING}")
 message(STATUS "[slimfmt] force-assert: ${SLIMFMT_FORCE_ASSERT}")
@@ -19,7 +18,7 @@ message(STATUS "[slimfmt] stderr-assert: ${SLIMFMT_STDERR_ASSERT}")
 add_library(slimfmt STATIC src/Slimfmt.cpp)
 add_library(slimfmt::slimfmt ALIAS slimfmt)
 target_include_directories(slimfmt PUBLIC src)
-target_compile_features(slimfmt PUBLIC cxx_std_20)
+target_compile_features(slimfmt PUBLIC cxx_std_17)
 target_compile_definitions(slimfmt PRIVATE
   "SLIMFMT_FORCE_ASSERT=$<BOOL:${SLIMFMT_FORCE_ASSERT}>"
   "SLIMFMT_STDERR_ASSERT=$<BOOL:${SLIMFMT_STDERR_ASSERT}>"

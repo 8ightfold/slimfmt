@@ -92,7 +92,8 @@ namespace sfmt {
     return usesColor.exchange(Value);
   }
 
-  static void dbgprintf(const char* Function, unsigned Line, const char* Str) {
+  [[maybe_unused]] static void
+   dbgprintf(const char* Function, unsigned Line, const char* Str) {
     const bool UseColors = sfmt::getColorMode();
     const char* Red   = UseColors ? "\e[0;31m" : "";
     const char* BRed  = UseColors ? "\e[0;91m" : "";
@@ -762,8 +763,7 @@ static inline int countDigitsDispatch(T Value, RawBaseType Base) {
   const auto Norm = static_cast<std::uint64_t>(Value);
   // TODO: Change this, too lazy rn
   return baseDispatch(Value, Base,
-  [] <std::size_t BaseV> 
-   (IntFormat<BaseV> Fmt, std::uint64_t Value) {
+  [] (auto Fmt, std::uint64_t Value) {
     return Fmt.Count(Value);
   });
 }
@@ -899,8 +899,7 @@ bool Formatter::write(unsigned long long Value) const {
     (Spec.Extra == ExtraType::Uppercase) &&
     (Spec.Extra != ExtraType::Ptr);
   return baseDispatch(Value, Spec.Base, 
-  [this, UseUpper] <std::size_t BaseV> 
-   (IntFormat<BaseV> Fmt, std::uint64_t Value) {
+  [this, UseUpper] (auto Fmt, std::uint64_t Value) {
     return Fmt.Write(this->Buf, Value, UseUpper);
   });
 }
@@ -985,8 +984,13 @@ static AlignType parseRSpecSide(StrView& Spec) {
   if SLIMFMT_UNLIKELY(Spec.empty())
     return AlignType::Default;
   const char AlignChar = Spec.front();
+  // If the character is in the range [0-9].
+  if SLIMFMT_UNLIKELY(std::isdigit(AlignChar))
+    return AlignType::Default;
   Spec.remove_prefix(1);
   switch (AlignChar) {
+    // Next
+    case '%':
     // Left
     case '+':
     case '<': return AlignType::Left;
@@ -1007,6 +1011,7 @@ static AlignType parseRSpecSide(StrView& Spec) {
 static std::size_t parseRSpecAlign(StrView& Spec) {
   if SLIMFMT_UNLIKELY(Spec.empty())
     return 0;
+  // Dynamic align character
   if (Spec.front() == '*') {
     Spec.remove_prefix(1);
     return FmtReplacement::dynamicAlign;

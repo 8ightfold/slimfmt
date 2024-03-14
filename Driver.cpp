@@ -38,26 +38,35 @@ void testBuf() {
   OtherBuf.writeTo(stdout);
 }
 
+template <typename F>
+static inline void runOneTest(std::string& Str, CustomType& Any, F&& Func) {
+  Func("Testing, testing, {}!",      "123");
+  Func("Testing, testing, {:#9}!",  "123");
+  Func("Testing, testing, {:# 9}!", "123");
+  Func("Testing, testing, {: +9}!", 123);
+  Func("Testing, testing, {: =*%D}!", 9, "123");
+  Func("Testing, testing, {: -9}!", 123);
+  Func("Testing, testing, {%c}!", "ABC");
+  Func("{%b}, {}, {} {}!!", 42, "it's great", Any, Str);
+  Func("{}, {%o}, {} {}!!", "it's great", 42, Str, Any);
+  Func("{}, {}, {%d} {}!!", Any, "it's great", 42, Str);
+  Func("{}, {}, {} {%X}!!", Str, Any, "it's great", 42);
+  Func("\n\n");
+  Func("Testing, testing, {}!!",      "123");
+  Func("Testing, testing, {: +10%x}!!", -123);
+  Func("Testing, testing, {: =*}!!", 10, "-7b");
+  Func("Testing, testing, {: -10%x}!!", -123);
+  Func("Testing, testing, {%c}!!", "ABC");
+  Func("{%b}, {}, {} {}!", 42, "it's great", Any, Str);
+  Func("{}, {%o}, {} {}!", "it's great", 42, Str, Any);
+  Func("{}, {}, {%d} {}!", Any, "it's great", 42, Str);
+  Func("{}, {}, {} {%X}!", Str, Any, "it's great", 42);
+}
+
 static inline void runOneTest(std::string& Str, CustomType& Any) {
-  sfmt::println("Testing, testing, {}!",      "123");
-  sfmt::println("Testing, testing, {: +10}!", 123);
-  sfmt::println("Testing, testing, {: =*%D}!", 10, "123");
-  sfmt::println("Testing, testing, {: -10}!", 123);
-  sfmt::println("Testing, testing, {%c}!", "ABC");
-  sfmt::println("{%b}, {}, {} {}!!", 42, "it's great", Any, Str);
-  sfmt::println("{}, {%o}, {} {}!!", "it's great", 42, Str, Any);
-  sfmt::println("{}, {}, {%d} {}!!", Any, "it's great", 42, Str);
-  sfmt::println("{}, {}, {} {%X}!!", Str, Any, "it's great", 42);
-  sfmt::println("\n\n");
-  sfmt::println("Testing, testing, {}!!",      "123");
-  sfmt::println("Testing, testing, {: +10%x}!!", -123);
-  sfmt::println("Testing, testing, {: =*}!!", 10, "-7b");
-  sfmt::println("Testing, testing, {: -10%x}!!", -123);
-  sfmt::println("Testing, testing, {%c}!!", "ABC");
-  sfmt::println("{%b}, {}, {} {}!", 42, "it's great", Any, Str);
-  sfmt::println("{}, {%o}, {} {}!", "it's great", 42, Str, Any);
-  sfmt::println("{}, {}, {%d} {}!", Any, "it's great", 42, Str);
-  sfmt::println("{}, {}, {} {%X}!", Str, Any, "it's great", 42);
+  runOneTest(Str, Any, [](auto&&...Args) {
+    sfmt::println(Args...);
+  });
 }
 
 int main() {
@@ -81,11 +90,12 @@ int main() {
   sfmt::println("{%r32}, {%r25}, {%r8}, {%r5}\n", 789942, 59922, 98311, 588585);
   sfmt::println("{%r32p}!!\n", "Yello");
 
-  // constexpr std::int64_t Iters = 100000;
-  constexpr std::int64_t Iters = 1;
+  constexpr std::int64_t Iters = 100000;
   auto Start = TimerType::now();
   for (std::int64_t I = 0; I < Iters; ++I) {
-    runOneTest(Str, Any);
+    runOneTest(Str, Any, [](auto&&...Args) {
+      (void) sfmt::nulls(Args...);
+    });
   }
   auto End = TimerType::now();
   const chrono::duration<double> Secs = End - Start;
