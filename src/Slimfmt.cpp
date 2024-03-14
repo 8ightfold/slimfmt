@@ -18,8 +18,9 @@
 
 #include "Slimfmt.hpp"
 #include <atomic>
-#include <cmath>
 #include <charconv>
+#include <climits>
+#include <cmath>
 #include <ostream>
 #include <tuple>
 
