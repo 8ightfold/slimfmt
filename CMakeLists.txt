@@ -3,7 +3,7 @@ include_guard(DIRECTORY)
 
 project(
   slimfmt
-  VERSION 0.0.8
+  VERSION 0.1.0
   LANGUAGES CXX
 )
 
@@ -27,5 +27,4 @@ target_compile_definitions(slimfmt PRIVATE
 if(SLIMFMT_TESTING)
   add_executable(driver Driver.cpp)
   target_link_libraries(driver PRIVATE slimfmt::slimfmt)
-  target_link_options(driver PUBLIC -ggdb)
 endif()

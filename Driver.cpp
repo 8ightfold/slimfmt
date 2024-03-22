@@ -69,6 +69,18 @@ static inline void runOneTest(std::string& Str, CustomType& Any) {
   });
 }
 
+sfmt::Printer& getDbgErrorPrinter(bool IsDebug) {
+  if (IsDebug)
+    return sfmt::errln;
+  else
+    return sfmt::null;
+}
+
+void dbgTest(bool IsDebug) {
+  auto& Dbg = getDbgErrorPrinter(IsDebug);
+  Dbg("{}, {}, {}\n", 'x', 'y', 'z');
+}
+
 int main() {
   namespace chrono = std::chrono;
   using TimerType = chrono::high_resolution_clock;
@@ -77,24 +89,24 @@ int main() {
   std::string Str = "yeah!!";
   CustomType  Any = {"sooo"};
 
-  sfmt::nulls("static constexpr std::uint64_t baseLog2LUT[] {{\n  ");
-  sfmt::nulls("0, ");
+  sfmt::null("static constexpr std::uint64_t baseLog2LUT[] {{\n  ");
+  sfmt::null("0, ");
   for (int I = 1; I <= 32; ++I) {
     const auto Log = std::log2(double(I));
-    sfmt::nulls("{}, ", std::uint64_t(Log));
+    sfmt::null("{}, ", std::uint64_t(Log));
     if ((I % 8) == 0)
-      sfmt::nulls("\n  ");
+      sfmt::null("\n  ");
   }
-  sfmt::nulls("};\n");
+  sfmt::null("};\n");
 
-  sfmt::println("{%r32}, {%r25}, {%r8}, {%r5}\n", 789942, 59922, 98311, 588585);
+  sfmt::outln("{%r32}, {%r25}, {%r8}, {%r5}\n", 789942, 59922, 98311, 588585);
   sfmt::println("{%r32p}!!\n", "Yello");
 
   constexpr std::int64_t Iters = 100000;
   auto Start = TimerType::now();
   for (std::int64_t I = 0; I < Iters; ++I) {
     runOneTest(Str, Any, [](auto&&...Args) {
-      (void) sfmt::nulls(Args...);
+      (void) sfmt::test(Args...);
     });
   }
   auto End = TimerType::now();
@@ -102,4 +114,7 @@ int main() {
 
   std::cout << "Took " << Secs.count() << "s to do "
     << Iters << " iterations." << std::endl;
+  
+  dbgTest(true);
+  dbgTest(false);
 }

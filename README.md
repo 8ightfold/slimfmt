@@ -7,12 +7,12 @@ type checking, but these checks have been moved to runtime.
 
 ## API
 
-*Note:* Template arguments have been removed.
+*Note:* Template arguments have been removed, and are formatted like functions.
 ``N`` is a ``std::size_t``, and ``TT`` is a variadic template.
 
 ```cpp
 std::string format(const char(&Str)[N], TT&&...Args);
-void nulls(const char(&Str)[N], TT&&...Args);
+void null(const char(&Str)[N], TT&&...Args);
 
 void print(std::FILE* File, const char(&Str)[N], TT&&...Args);
 void print(std::ostream& Stream, const char(&Str)[N], TT&&...Args);
@@ -22,15 +22,49 @@ void println(std::FILE* File, const char(&Str)[N], TT&&...Args);
 void println(std::ostream& Stream, const char(&Str)[N], TT&&...Args);
 void println(const char(&Str)[N], TT&&...Args);
 
+void out([...]);
+void err([...]);
+void outln([...]);
+void errln([...]);
+
+void flush(std::FILE* File);
+void flush(std::ostream& Stream);
 bool setColorMode(bool Value);
 ```
 
+- ``null[s]``: Tests in debug, does nothing in release.
+- ``out``/``print``: Formats the arguments, and prints to the passed stream/file (``stdout`` by default).
+- ``outln``/``println``: Same as ``print``, but adds a newline.
+- ``err[ln]``: Same as ``print[ln]``, but prints to ``stderr`` by default.
 - ``format``: Formats the arguments and returns a string.
-- ``nulls``: Does nothing (reserved for future use).
-- ``print``: Formats the arguments, and prints to the passed stream/file (``stdout`` by default).
-- ``println``: Same as ``print``, but adds a newline.
-- ``setColorMode``: Enables/disables colors, currently only affects errors (if enabled).
-  
+- ``flush``: Self explanatory...
+- ``setColorMode``: Enables/disables colors, currently affects errors (if enabled) and ``err[ln]``.
+
+Because the printers are actually objects, you can use them for simple optional printing.
+For example:
+
+```cpp
+sfmt::Printer& getDbgErrorPrinter(bool IsDebug) {
+  if (IsDebug)
+    return sfmt::errln;
+  else
+    return sfmt::null;
+}
+
+void dbgTest(bool IsDebug) {
+  auto& Dbg = getDbgErrorPrinter(IsDebug);
+  Dbg("{}, {}, {}", 'x', 'y', 'z');
+}
+
+// Won't print anything.
+dbgTest(false);
+
+// Prints `x, y, z`.
+dbgTest(true);
+```
+
+Keep in mind this is not the case for ``sfmt::format``.
+
 ## Format Strings
 
 A format string will look something like:

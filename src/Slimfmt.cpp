@@ -1278,3 +1278,91 @@ void Formatter::parseWith(FmtValue::List Values) {
 
   dbgassert(Vs.isEmpty() && "Too many arguments passed to formatter!");
 }
+
+//======================================================================//
+// API
+//======================================================================//
+
+namespace {
+
+struct NullPrinter : public BasePrinter {
+  void printerRun(
+   StrView Str, SmallBufBase& Buf, 
+   FmtValue::List Values) const override {
+#ifndef NDEBUG
+    Formatter Fmt {Buf, Str};
+    Fmt.parseWith(Values);
+#endif
+  }
+
+  void defaultWrite(SmallBufBase&) const override {}
+};
+
+struct TestPrinter : public NullPrinter {
+  void printerRun(
+   StrView Str, SmallBufBase& Buf, 
+   FmtValue::List Values) const override {
+    Formatter Fmt {Buf, Str};
+    Fmt.parseWith(Values);
+  }
+};
+
+template <bool UseErr, bool AddLine>
+struct OutPrinter : public BasePrinter {
+  void printerRun(
+   StrView Str, SmallBufBase& Buf, 
+   FmtValue::List Values) const override {
+    Formatter Fmt {Buf, Str};
+    Fmt.parseWith(Values);
+    if constexpr (AddLine)
+      Buf.pushBack('\n');
+  }
+
+  void defaultWrite(SmallBufBase& Buf) const override {
+    if SLIMFMT_UNLIKELY(Buf.isEmpty())
+      return;
+    if constexpr (UseErr) {
+      if (!getColorMode()) {
+        Buf.writeTo(stderr);
+        return;
+      }
+      Buf.pushBack('\0');
+      std::fprintf(stderr, "\e[0;31m%s\e[0m", Buf.data());
+    } else {
+      Buf.writeTo(stdout); 
+    }
+  }
+};
+
+static const NullPrinter nullV {};
+static const TestPrinter testV {};
+static const OutPrinter<false, false> outV {};
+static const OutPrinter<true,  false> errV {};
+static const OutPrinter<false, true>  outlnV {};
+static const OutPrinter<true,  true>  errlnV {};
+
+} // namespace anonymous
+
+namespace sfmt {
+
+constexpr Printer& null    = nullV;
+constexpr Printer& test    = testV;
+constexpr Printer& out     = outV;
+constexpr Printer& err     = errV;
+constexpr Printer& outln   = outlnV;
+constexpr Printer& errln   = errlnV;
+
+// Aliases
+constexpr Printer& nulls   = null;
+constexpr Printer& print   = out;
+constexpr Printer& println = outln;
+
+} // namespace sfmt
+
+void sfmt::flush(std::FILE* File) {
+  std::fflush(File);
+}
+
+void sfmt::flush(std::ostream& Stream) {
+  Stream << std::flush;
+}
