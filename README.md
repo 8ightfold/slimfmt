@@ -139,7 +139,7 @@ Some miscellaneous options are:
 - Character: ``'c'`` or ``'C'``, will only print the first character of strings.
   
 These options must always follow an explicit base, as they are handled differently.
-For example ``%xP`` is valid, but ``%Px`` is not.
+For example, ``%xP`` is valid, but ``%Px`` is not.
 
 ## CMake
 
