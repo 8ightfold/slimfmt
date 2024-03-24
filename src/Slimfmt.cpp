@@ -1326,8 +1326,9 @@ struct OutPrinter : public BasePrinter {
         Buf.writeTo(stderr);
         return;
       }
-      Buf.pushBack('\0');
-      std::fprintf(stderr, "\e[0;31m%s\e[0m", Buf.data());
+      std::fputs("\e[0;31m", stderr);
+      Buf.writeTo(stderr);
+      std::fputs("\e[0m", stderr);
     } else {
       Buf.writeTo(stdout); 
     }
