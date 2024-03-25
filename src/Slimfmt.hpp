@@ -504,6 +504,21 @@ namespace sfmt {
 
 struct Formatter;
 
+namespace H {
+  template <typename T, typename = void>
+  struct HasAnyFmt : std::false_type {};
+
+  template <typename T>
+  struct HasAnyFmt<T, std::void_t<
+    decltype(format_custom(
+      std::declval<const Formatter&>(), 
+      std::declval<const T&>()))>>
+    : std::true_type {};
+  
+  template <typename T>
+  inline constexpr bool hasAnyFmt = HasAnyFmt<T>::value;
+} // namespace H
+
 /// An implementation of any which doesn't use dynamic allocation.
 class Any {
   template <typename T>
@@ -518,7 +533,7 @@ public:
   template <typename T> Any(const T& Value) : 
    Data(&Value), ID(&Type<T>::ID) {}
   
-  template <typename T> Any(T& Value) :
+  template <typename T> Any(T& Value) : 
    Data(&Value), ID(&Type<T>::ID) {}
 
   Any& operator=(Any&& Other) {
@@ -589,6 +604,8 @@ private:
 
   template <typename T>
   static FmtFnType GetFormatter(const T&) {
+    static_assert(H::hasAnyFmt<T>,
+      "Cannot resolve overload!");
     return &AnyFmt::RunFormatter<T>;
   }
 
@@ -742,11 +759,11 @@ public:
     Value.CString = Str;
   }
 
-  FmtValue(const std::string& Str) : Type(StdStringType) {
+  FmtValue(std::string& Str) : Type(StdStringType) {
     Value.StdString = &Str;
   }
 
-  FmtValue(const StrView& Str) : Type(StringViewType) {
+  FmtValue(StrView& Str) : Type(StringViewType) {
     Value.StringView = &Str;
   }
 

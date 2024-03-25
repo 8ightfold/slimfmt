@@ -81,6 +81,17 @@ void dbgTest(bool IsDebug) {
   Dbg("{}, {}, {}\n", 'x', 'y', 'z');
 }
 
+struct Test {
+  operator std::string() const {
+    return "Yello";
+  }
+  operator std::string_view() const {
+    return "Yello";
+  }
+};
+
+void format_custom(const Formatter& Fmt, const Test&) {}
+
 int main() {
   namespace chrono = std::chrono;
   using TimerType = chrono::high_resolution_clock;
@@ -117,4 +128,6 @@ int main() {
   
   dbgTest(true);
   dbgTest(false);
+
+  sfmt::null("{}", Test{});
 }
