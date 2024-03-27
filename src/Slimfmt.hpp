@@ -759,7 +759,8 @@ public:
     Value.CString = Str;
   }
 
-  FmtValue(std::string& Str) : Type(StdStringType) {
+  /// Allow implicit conversions to `std::string`.
+  FmtValue(const std::string& Str) : Type(StdStringType) {
     Value.StdString = &Str;
   }
 
@@ -910,6 +911,21 @@ template <std::size_t N>
 using SmallBufEstimateType = 
   SmallBuf<(N > 48) ? 128 : 64>;
 
+template <typename T>
+inline constexpr decltype(auto) fmt_cast(T& Val) noexcept {
+  using CastType = std::remove_const_t<T>;
+  if constexpr (!H::hasAnyFmt<CastType>)
+    // Coerces "builtin" types to their deducible representation.
+    return const_cast<CastType&>(Val);
+  else
+    // Wraps any type which has a format overload.
+    // This means the user can wrap "builtin" types if they wish.
+    return AnyFmt{Val};
+}
+
+/// Used to construct types with the correct deduction.
+#define SLIMFMT_ARG(...) sfmt::FmtValue{sfmt::fmt_cast(__VA_ARGS__)}
+
 /// @brief Base class for implementing the print pseudofunctions.
 /// To provide custom behaviour, implement either `printerRun`
 /// or `defaultWrite`.
@@ -917,7 +933,7 @@ struct BasePrinter {
   template <std::size_t N, typename...TT>
   void operator()(const char(&Str)[N], TT&&...Args) const {
     SmallBufEstimateType<N> Buf;
-    this->printerRun({Str, N}, Buf, {FmtValue{Args}...});
+    this->printerRun({Str, N}, Buf, {SLIMFMT_ARG(Args)...});
     this->defaultWrite(Buf);
   }
 
@@ -925,7 +941,7 @@ struct BasePrinter {
   void operator()(std::FILE* File,
    const char(&Str)[N], TT&&...Args) const {
     SmallBufEstimateType<N> Buf;
-    this->printerRun({Str, N}, Buf, {FmtValue{Args}...});
+    this->printerRun({Str, N}, Buf, {SLIMFMT_ARG(Args)...});
     Buf.writeTo(File);
   }
 
@@ -933,7 +949,7 @@ struct BasePrinter {
   void operator()(std::ostream& Stream,
    const char(&Str)[N], TT&&...Args) const {
     SmallBufEstimateType<N> Buf;
-    this->printerRun({Str, N}, Buf, {FmtValue{Args}...});
+    this->printerRun({Str, N}, Buf, {SLIMFMT_ARG(Args)...});
     Buf.writeTo(Stream);
   }
 
@@ -968,7 +984,7 @@ template <std::size_t N, typename...TT>
 std::string format(const char(&Str)[N], TT&&...Args) {
   SmallBufEstimateType<N> Buf;
   Formatter Fmt {Buf, {Str, N}};
-  Fmt.parseWith({FmtValue{Args}...});
+  Fmt.parseWith({SLIMFMT_ARG(Args)...});
   return std::string(Buf.begin(), Buf.end());
 }
 

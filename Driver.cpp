@@ -88,9 +88,50 @@ struct Test {
   operator std::string_view() const {
     return "Yello";
   }
+  operator unsigned() const {
+    return sizeof("Yello") - 1;
+  }
 };
 
-void format_custom(const Formatter& Fmt, const Test&) {}
+void format_custom(const Formatter& Fmt, const Test& T) {
+  Fmt->reserveBack(5 + 2);
+  Fmt->pushBack('"');
+  Fmt->appendStr(T);
+  Fmt->pushBack('"');
+}
+
+template <std::size_t N, typename...TT>
+void printTypes(const char(&Str)[N], TT&&...Args) {
+  SmallBufEstimateType<sizeof...(TT) * 8> Buf {};
+  FmtValue Data[] { SLIMFMT_ARG(Args)... };
+  constexpr std::size_t ArgCount = sizeof...(TT);
+  for (std::size_t I = 0; I < ArgCount; ++I) {
+    Buf.appendStr(Data[I].getTypeName());
+    if SLIMFMT_LIKELY((I + 1) < ArgCount)
+      Buf.appendStr(", ");
+  }
+  Buf.appendStr(":\n");
+  Buf.writeTo(stdout);
+  sfmt::println(Str, Args...);
+}
+
+void testTypes() {
+  std::string S = "Zello";
+  std::string& SR = S;
+  const std::string& SCR = SR;
+
+  StrView SV = "Mello";
+  StrView& SVR = SV;
+  const StrView& SVCR = SVR;
+
+  Test T {};
+  Test& TR = T;
+  const Test& TCR = TR;
+
+  printTypes(
+    "({}, {}, {}), ({}, {}, {}), ({}, {}, {})",
+    S, SR, SCR, SV, SVR, SVCR, T, TR, TCR);
+}
 
 int main() {
   namespace chrono = std::chrono;
@@ -130,4 +171,5 @@ int main() {
   dbgTest(false);
 
   sfmt::null("{}", Test{});
+  testTypes();
 }

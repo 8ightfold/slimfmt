@@ -3,7 +3,7 @@ include_guard(DIRECTORY)
 
 project(
   slimfmt
-  VERSION 0.1.2
+  VERSION 0.1.3
   LANGUAGES CXX
 )
 
