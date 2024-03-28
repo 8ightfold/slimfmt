@@ -505,6 +505,15 @@ namespace sfmt {
 struct Formatter;
 
 namespace H {
+  template <typename T>
+  inline constexpr bool isBuiltinType =
+    std::is_arithmetic_v<T>         ||
+    std::is_enum_v<T>               ||
+    std::is_null_pointer_v<T>       ||
+    std::is_same_v<T, const char*>  ||
+    std::is_same_v<T, std::string>  ||
+    std::is_same_v<T, StrView>;
+
   template <typename T, typename = void>
   struct HasAnyFmt : std::false_type {};
 
@@ -914,7 +923,7 @@ using SmallBufEstimateType =
 template <typename T>
 inline constexpr decltype(auto) fmt_cast(T& Val) noexcept {
   using CastType = std::remove_const_t<T>;
-  if constexpr (!H::hasAnyFmt<CastType>)
+  if constexpr (H::isBuiltinType<CastType> || !H::hasAnyFmt<CastType>)
     // Coerces "builtin" types to their deducible representation.
     return const_cast<CastType&>(Val);
   else
