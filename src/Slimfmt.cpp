@@ -62,11 +62,11 @@
 static inline int msc_clzll(std::uint64_t V) {
   unsigned long Out = 0;
 #ifdef _WIN64
-  _BitScanForward64(&Out, V);
+  _BitScanReverse64(&Out, V);
 #else // _WIN64
-  if (_BitScanForward(&Out, std::uint32_t(V >> 32)))
+  if (_BitScanReverse(&Out, std::uint32_t(V >> 32)))
     return 63 ^ int(Out + 32);
-  _BitScanForward(&Out, std::uint32_t(V));
+  _BitScanReverse(&Out, std::uint32_t(V));
 #endif // _WIN64
   assert(V != 0 && "Invalid clzll input!");
   return int(Out);
