@@ -60,16 +60,16 @@
 # endif // __clang__
 
 static inline int msc_clzll(std::uint64_t V) {
+  assert(V != 0 && "Invalid clzll input!");
   unsigned long Out = 0;
 #ifdef _WIN64
-  _BitScanForward64(&Out, V);
+  _BitScanReverse64(&Out, V);
 #else // _WIN64
-  if (_BitScanForward(&Out, std::uint32_t(V >> 32)))
-    return 63 ^ int(Out + 32);
-  _BitScanForward(&Out, std::uint32_t(V));
+  if (_BitScanReverse(&Out, std::uint32_t(V >> 32)))
+    return 63 - int(Out + 32);
+  _BitScanReverse(&Out, std::uint32_t(V));
 #endif // _WIN64
-  assert(V != 0 && "Invalid clzll input!");
-  return int(Out);
+  return 63 - int(Out);
 }
 
 # define SLIMFMT_CLZLL(x) ::msc_clzll(x)
